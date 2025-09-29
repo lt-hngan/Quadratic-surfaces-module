@@ -1,0 +1,13 @@
+@font-face {
+  font-family: 'KaTeX_Main';
+  src: url('./fonts/KaTeX_Main-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'KaTeX_Main';
+  src: url('./fonts/KaTeX_Main-Italic.woff2') format('woff2');
+  font-weight: normal;
+  font-style: italic;
+}

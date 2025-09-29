@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Hyperboloid (offline, no-ESM)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="./lib/katex.min.css">
+<style>
+  html,body{margin:0;height:100%;background:#0a0e14;color:#eaeef2;font-family:system-ui;overflow:hidden}
+  #hud{position:fixed;top:10px;left:10px;z-index:10;background:#1118;border:1px solid #334;padding:10px 12px;border-radius:8px}
+  #hud button,#hud input{margin:3px 0}
+  #hint{position:fixed;right:10px;bottom:10px;z-index:10;background:#1118;border:1px solid #334;border-radius:8px;padding:6px 8px;font-size:12px;color:#c8cede}
+  /* KaTeX-styled labels */
+  .axis-label{font-family:"KaTeX_Main","Latin Modern Math","STIX Two Text",serif;font-size:18px;color:#e8ecff;text-shadow:0 0 4px rgba(20,30,60,.6);user-select:none;pointer-events:none}
+  .eq-white{color:#ffffff;text-shadow:0 0 6px rgba(0,0,0,.35)}
+  .eq-red{color:#ff5252;text-shadow:0 0 6px rgba(60,10,10,.45)}
+  #c{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div style="font-weight:700;margin-bottom:6px">Hyperboloid of one sheet</div>
+  <label>Duration (s): <input id="dur" type="number" value="10" min="3" max="60" style="width:64px"></label>
+  <label> Zmax: <input id="zmax" type="number" value="2.5" step="0.5" style="width:64px"></label>
+  <div><button id="play">Play/Pause</button> <button id="reset">Reset</button></div>
+</div>
+
+
+<div id="hint">Kéo để xoay • Lăn/pinch để zoom • Shift+Kéo để di chuyển</div>
+<canvas id="c"></canvas>
+
+<script src="./lib/three.min.js"></script>
+<script src="./lib/OrbitControls.js"></script>
+<script src="./lib/CSS2DRenderer.js"></script>
+<script src="./lib/katex.min.js"></script>
+
+<script>
+// === Renderer & label renderer ===
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+
+const labelRenderer = new THREE.CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, {position:'fixed', top:'0', left:'0', pointerEvents:'none', zIndex:'5'});
+document.body.appendChild(labelRenderer.domElement);
+
+// === Scene / Camera / Controls ===
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0e14);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(6,-6,4);
+camera.up.set(0,0,1);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0,0,0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.zoomSpeed = 0.25;      // zoom bớt nhạy
+  controls.minDistance = 3.0;
+  controls.maxDistance = 40.0;
+  controls.update();
+
+// Resize
+addEventListener('resize', ()=>{
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+});
+
+// Lights
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.8));
+const dir = new THREE.DirectionalLight(0xffffff, 0.7); dir.position.set(6,6,8); scene.add(dir);
+
+// Axes + grid
+const AXLEN = 5;
+const matX = new THREE.LineBasicMaterial({color:0xff6b6b, transparent:true, opacity:0.7});
+const matY = new THREE.LineBasicMaterial({color:0x7be77b, transparent:true, opacity:0.7});
+const matZ = new THREE.LineBasicMaterial({color:0x6fa8ff, transparent:true, opacity:0.9});
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-AXLEN,0,0), new THREE.Vector3(AXLEN,0,0)]), matX));
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-AXLEN,0), new THREE.Vector3(0,AXLEN,0)]), matY));
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-AXLEN), new THREE.Vector3(0,0,AXLEN)]), matZ));
+const cone = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.25, 16), new THREE.MeshBasicMaterial({color:0x6fa8ff, transparent:true, opacity:0.9}));
+cone.position.set(0,0,AXLEN); cone.rotation.x = Math.PI/2; scene.add(cone);
+
+function makeGrid(size, divisions, c1, c2, opacity){
+  const g = new THREE.GridHelper(size, divisions, c1, c2);
+  if (Array.isArray(g.material)) g.material.forEach(m=>{ m.transparent = true; m.opacity = opacity; });
+  else { g.material.transparent = true; g.material.opacity = opacity; }
+  return g;
+}
+
+// Oxy (z = 0): cần xoay 90° quanh trục X để “nằm ngang” khi Z-up
+const gridOxy = makeGrid(16, 16, 0xb6bbcc, 0x84878c, 0.22);
+gridOxy.rotation.x = Math.PI/2;
+scene.add(gridOxy);
+
+// Oxz (y = 0): GridHelper mặc định đã nằm trên mặt XZ → không cần xoay
+const gridOxz = makeGrid(16, 16, 0xb6bbcc, 0x84878c, 0.18); // màu hơi khác để dễ phân biệt
+scene.add(gridOxz);
+
+
+// ------- KaTeX label helpers -------
+function makeLatexLabel(tex, pos, className='axis-label'){
+  const el = document.createElement('div'); el.className = className;
+  window.katex.render(tex, el, {throwOnError:false});
+  const obj = new THREE.CSS2DObject(el); obj.position.copy(pos); return obj;
+}
+const OFFSET = 0.25;
+scene.add(
+  makeLatexLabel("\\mathit{x}", new THREE.Vector3(AXLEN+OFFSET,0,0)),
+  makeLatexLabel("\\mathit{y}", new THREE.Vector3(0,AXLEN+OFFSET,0)),
+  makeLatexLabel("\\mathit{z}", new THREE.Vector3(0,0,AXLEN+OFFSET)),
+);
+
+// ------- Hyperbola + sweep surface -------
+const durInput = document.getElementById('dur'), zmaxInput=document.getElementById('zmax');
+let ZMAX = parseFloat(zmaxInput.value), resU=60, resV=80, durationSec=parseFloat(durInput.value);
+
+function makeHyperbolaLine(zmax=ZMAX, pts=200){
+  const arr=[]; 
+  for(let i=0;i<pts;i++){
+    const t=-zmax+(2*zmax)*i/(pts-1); 
+    arr.push(new THREE.Vector3(Math.sqrt(1+t*t),0,t));
+  }
+  const geo=new THREE.BufferGeometry().setFromPoints(arr);
+  const line=new THREE.Line(geo, new THREE.LineBasicMaterial({color:0xff5252}));
+  line.scale.x=1.01; 
+  return line;
+}
+let hyperbolaLine = makeHyperbolaLine(); 
+scene.add(hyperbolaLine);
+
+// ------- Equation labels (new) -------
+let eqHyperbola = null;    // gắn theo hyperbola, màu đỏ
+let eqHyperboloid = null;  // hiện sau khi quét xong, màu trắng
+
+function createOrUpdateEquationLabels(){
+  // remove cũ nếu có
+  if (eqHyperbola && eqHyperbola.parent) eqHyperbola.parent.remove(eqHyperbola);
+  if (eqHyperboloid && eqHyperboloid.parent) eqHyperboloid.parent.remove(eqHyperboloid);
+
+  // vị trí "phía trên" đầu hyperbola/z: tại z=ZMAX, x = sqrt(1+ZMAX^2)
+  const xTop = Math.sqrt(1 + ZMAX*ZMAX);
+  const upOffsetZ = 0.18;   // nhô lên một chút
+  const outOffsetX = 0.28;  // lệch nhẹ ra ngoài
+
+  // Hyperbola: parent vào hyperbolaLine để quay theo
+  eqHyperbola = makeLatexLabel("\\;x^{2}-z^{2}=1\\;", new THREE.Vector3(xTop + outOffsetX, 0, ZMAX + upOffsetZ), 'axis-label eq-red');
+  hyperbolaLine.add(eqHyperbola); // đặt theo local của hyperbola
+
+  // Hyperboloid: đặt phía đối diện (bên -x) để không dính chữ, ẩn cho đến khi xoay xong
+  eqHyperboloid = makeLatexLabel("\\;x^{2}+y^{2}-z^{2}=1\\;", new THREE.Vector3(-(xTop + outOffsetX), 0, ZMAX + upOffsetZ), 'axis-label eq-white');
+  eqHyperboloid.visible = false;
+  scene.add(eqHyperboloid);
+}
+createOrUpdateEquationLabels();
+
+// Sweep mesh
+let sweepAngle=0, surfaceMesh=null, playing=false, tPrev=0;
+function buildSurface(angle){
+  if(surfaceMesh){ surfaceMesh.geometry.dispose(); scene.remove(surfaceMesh); surfaceMesh=null; }
+  const uSeg=Math.max(3,resU), vSeg=Math.max(3,resV);
+  const positions=new Float32Array((uSeg+1)*(vSeg+1)*3); let p=0;
+  for(let iu=0; iu<=uSeg; iu++){
+    const th=angle*(iu/uSeg), cs=Math.cos(th), sn=Math.sin(th);
+    for(let iv=0; iv<=vSeg; iv++){
+      const v=-ZMAX+(2*ZMAX)*(iv/vSeg), r=Math.sqrt(1+v*v);
+      positions[p++]=r*cs; positions[p++]=r*sn; positions[p++]=v;
+    }
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  const idx=[]; 
+  for(let iu=0; iu<uSeg; iu++)
+    for(let iv=0; iv<vSeg; iv++){const a=iu*(vSeg+1)+iv,b=(iu+1)*(vSeg+1)+iv,c=a+1,d=b+1; idx.push(a,b,c,b,d,c);}
+  geo.setIndex(idx); geo.computeVertexNormals();
+  surfaceMesh=new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color:0xbfd7ff, roughness:0.35, metalness:0.0, side:THREE.DoubleSide, transparent:true, opacity:0.95}));
+  scene.add(surfaceMesh);
+}
+buildSurface(0);
+
+// Loop
+function tick(ts){
+  if(!tPrev) tPrev=ts; 
+  const dt=(ts-tPrev)/1000; 
+  tPrev=ts;
+  if(playing){
+    const inc=(2*Math.PI)/durationSec*dt;
+    sweepAngle=Math.min(2*Math.PI, sweepAngle+inc);
+    buildSurface(sweepAngle);
+    hyperbolaLine.rotation.z=sweepAngle;
+    if(sweepAngle>=2*Math.PI){
+      playing=false;
+      // hiện phương trình hyperboloid sau khi xoay xong
+      if (eqHyperboloid) eqHyperboloid.visible = true;
+      // đảm bảo hyperbola trở về đúng hướng y=0
+      hyperbolaLine.rotation.z = 0;
+    }
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// UI
+document.getElementById('play').onclick=()=>{ if(sweepAngle<2*Math.PI) playing=!playing; };
+document.getElementById('reset').onclick=()=>{
+  ZMAX=parseFloat(zmaxInput.value);
+  durationSec=parseFloat(durInput.value);
+  sweepAngle=0; playing=false;
+
+  // rebuild hyperbola + labels
+  scene.remove(hyperbolaLine); hyperbolaLine.geometry.dispose();
+  hyperbolaLine = makeHyperbolaLine(ZMAX, Math.max(60,resV)); 
+  scene.add(hyperbolaLine);
+  createOrUpdateEquationLabels();      // cập nhật vị trí nhãn theo ZMAX
+  if (eqHyperboloid) eqHyperboloid.visible = false; // ẩn lại cho đến khi xoay xong
+
+  buildSurface(0);
+};
+</script>
+</body>
+</html>

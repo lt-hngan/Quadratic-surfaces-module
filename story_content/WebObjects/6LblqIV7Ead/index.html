@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Hyperboloid — Interactive Lesson (offline)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="./lib/katex.min.css">
+<style>
+  html,body{margin:0;height:100%;background:#0a0e14;color:#eaeef2;font-family:system-ui;overflow:hidden}
+  #ui{position:fixed;top:10px;left:10px;z-index:20;background:#1118;border:1px solid #334;padding:10px 12px;border-radius:10px}
+  #ui .row{margin:4px 0}
+  #ui button{margin:2px 0 0 0; padding:6px 10px; border-radius:8px; border:1px solid #445; background:#1a1f2a; color:#eaeef2; cursor:pointer}
+  #ui button.active{background:#2c3344; color:#cfd8ff}
+  #ui2{
+  position:fixed; top:10px; left:280px; z-index:20;
+  background:#1118; border:1px solid #334; padding:10px 12px; border-radius:10px
+}
+#ui2 button{margin:2px 0 0 0; padding:6px 10px; border-radius:8px; border:1px solid #445; background:#1a1f2a; color:#eaeef2; cursor:pointer}
+#ui2 button.active{background:#2c3344; color:#cfd8ff}
+  #hint{position:fixed;right:10px;bottom:10px;z-index:20;background:#1118;border:1px solid #334;border-radius:8px;padding:6px 8px;font-size:12px;color:#c8cede}
+  #note{position:fixed;right:10px;top:10px;z-index:20;background:#1118;border:1px solid #334;border-radius:8px;padding:8px 10px;min-width:220px;max-width:40vw}
+  .katex-block{font-size:16px}
+  .axis-label{font-family:"KaTeX_Main","Latin Modern Math","STIX Two Text",serif;font-size:18px;color:#e8ecff;text-shadow:0 0 5px rgba(20,30,60,.65);user-select:none;pointer-events:none}
+  .eq-label{font-family:"KaTeX_Main","Latin Modern Math","STIX Two Text",serif;font-size:18px;color:#e8ecff;text-shadow:0 0 5px rgba(20,30,60,.65);pointer-events:none}
+  #c{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+  <div id="ui">
+    <div class="row" style="font-weight:700;margin-bottom:6px">Hyperboloid of one sheet</div>
+    <div class="row">
+      <button id="btnEquation">equation</button>
+      <button id="btnTraces">traces</button>
+      <button id="btnSections">sections</button>
+    </div>
+    <div class="row">
+      <button id="btnIntercepts">intercepts</button>
+      <button id="btnCentre">centre</button>
+      <button id="btnSymmetry">symmetry</button>
+    </div>
+  </div>
+  <div id="ui2">
+  <div style="font-weight:700;margin-bottom:6px">Control</div>
+  <button id="btnResetAll">reset</button>
+  <button id="btnPause">pause</button>
+</div>
+  <div id="hint">Kéo để xoay • Lăn/pinch để zoom • Shift+Kéo để pan</div>
+  <div id="note"></div>
+  <canvas id="c"></canvas>
+
+  <!-- Libraries (global, non-module) -->
+  <script src="./lib/three.min.js"></script>
+  <script src="./lib/OrbitControls.js"></script>
+  <script src="./lib/CSS2DRenderer.js"></script>
+  <script src="./lib/katex.min.js"></script>
+
+  <script>
+  // ---------- Scene / Camera / Renderers ----------
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.localClippingEnabled = true;
+
+  const labelRenderer = new THREE.CSS2DRenderer();
+  labelRenderer.setSize(innerWidth, innerHeight);
+  Object.assign(labelRenderer.domElement.style,{position:'fixed',top:'0',left:'0',pointerEvents:'none',zIndex:'10'});
+  document.body.appendChild(labelRenderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0e14);
+
+  const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 200);
+  camera.position.set(7,-7,5);
+  camera.up.set(0,0,1); // Z-up
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0,0,0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.zoomSpeed = 0.25;      // zoom bớt nhạy
+  controls.minDistance = 3.0;
+  controls.maxDistance = 40.0;
+  controls.update();
+
+  addEventListener('resize', ()=>{
+    renderer.setSize(innerWidth, innerHeight);
+    labelRenderer.setSize(innerWidth, innerHeight);
+    camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  });
+
+  // ---------- Lights (dimmed) ----------
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.60));  // ↓ giảm từ 0.85
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.40);     // ↓ giảm từ 0.75
+  dirLight.position.set(6,6,8);
+  scene.add(dirLight);
+
+  // ---------- Axes + grid ----------
+  const AXLEN = 7;
+  const matX = new THREE.LineBasicMaterial({color:0xff6b6b, transparent:true, opacity:0.75});
+  const matY = new THREE.LineBasicMaterial({color:0x7be77b, transparent:true, opacity:0.75});
+  const matZ = new THREE.LineBasicMaterial({color:0x6fa8ff, transparent:true, opacity:0.95});
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-AXLEN,0,0), new THREE.Vector3(AXLEN,0,0)]), matX));
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-AXLEN,0), new THREE.Vector3(0,AXLEN,0)]), matY));
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-AXLEN), new THREE.Vector3(0,0,AXLEN)]), matZ));
+
+  // Arrowheads for +X, +Y, +Z
+  function addAxisArrow(dirVec, tipPos, color=0x6fa8ff){
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.08, 0.30, 20),
+      new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.95})
+    );
+    // Default cone points along +Y → rotate to desired dir
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dirVec.clone().normalize());
+    cone.quaternion.copy(q);
+    cone.position.copy(tipPos);
+    scene.add(cone);
+    return cone;
+  }
+  addAxisArrow(new THREE.Vector3(1,0,0), new THREE.Vector3(AXLEN,0,0), 0xff6b6b); // +X
+  addAxisArrow(new THREE.Vector3(0,1,0), new THREE.Vector3(0,AXLEN,0), 0x7be77b); // +Y
+  addAxisArrow(new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,AXLEN), 0x6fa8ff); // +Z
+
+  // Grids
+  const gridOxy = new THREE.GridHelper(16, 16, 0xa7abc2, 0xb3b5c4); // z=0
+  gridOxy.rotation.x = Math.PI/2; makeGridTransparent(gridOxy, 0.22); scene.add(gridOxy);
+  const gridOxz = new THREE.GridHelper(16, 16, 0xa7abc2, 0xb3b5c4); // y=0
+  makeGridTransparent(gridOxz, 0.22); gridOxz.visible=false; scene.add(gridOxz);
+  const gridOyz = new THREE.GridHelper(16, 16, 0xa7abc2, 0xb3b5c4); // x=0
+  gridOyz.rotation.z = Math.PI/2; makeGridTransparent(gridOyz, 0.22); gridOyz.visible=false; scene.add(gridOyz);
+  function makeGridTransparent(grid, opacity){
+    if (Array.isArray(grid.material)) grid.material.forEach(m=>{m.transparent=true; m.opacity=opacity;});
+    else { grid.material.transparent=true; grid.material.opacity=opacity; }
+  }
+
+  // ---------- Hyperboloid ----------
+  const A = 1.6, B = 1.0, C = 1.2;
+  const ZMAX = 3.0;
+  let hyperboloid = buildHyperboloid(A,B,C,ZMAX, 96, 140);
+  scene.add(hyperboloid);
+
+  // Equation label: đặt TRÊN đỉnh (gắn theo hình)
+  const eqOffset = 0.35;
+  const eqObj = makeLatexLabel("\\dfrac{x^{2}}{a^{2}}+\\dfrac{y^{2}}{b^{2}}-\\dfrac{z^{2}}{c^{2}}=1",
+    new THREE.Vector3(0, 0, ZMAX + eqOffset));
+  scene.add(eqObj);
+  eqObj.visible = false;  
+
+  // Axis labels
+  scene.add(makeAxisLabel("\\mathit{x}", new THREE.Vector3(AXLEN+0.3,0,0)));
+  scene.add(makeAxisLabel("\\mathit{y}", new THREE.Vector3(0,AXLEN+0.3,0)));
+  scene.add(makeAxisLabel("\\mathit{z}", new THREE.Vector3(0,0,AXLEN+0.3)));
+
+  function buildHyperboloid(a,b,c,zmax, segU, segV){
+    const uSeg = Math.max(12, segU), vSeg = Math.max(12, segV);
+    const positions = new Float32Array((uSeg+1)*(vSeg+1)*3);
+    let p=0;
+    for(let iu=0; iu<=uSeg; iu++){
+      const th = 2*Math.PI*iu/uSeg, cs=Math.cos(th), sn=Math.sin(th);
+      for(let iv=0; iv<=vSeg; iv++){
+        const z = -zmax + (2*zmax)*iv/vSeg;
+        const f = Math.sqrt(1 + (z*z)/(c*c));
+        positions[p++] = a*f*cs;
+        positions[p++] = b*f*sn;
+        positions[p++] = z;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+    const idx=[];
+    for(let iu=0; iu<uSeg; iu++){
+      for(let iv=0; iv<vSeg; iv++){
+        const a0 = iu*(vSeg+1)+iv, a1=a0+1, b0=(iu+1)*(vSeg+1)+iv, b1=b0+1;
+        idx.push(a0,b0,a1, b0,b1,a1);
+      }
+    }
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({
+      color:0xbfd7ff, roughness:0.55, metalness:0.0, // ↑ roughness để bớt chói
+      side:THREE.DoubleSide, transparent:true, opacity:0.93 // ↓ opacity chút để chữ nổi hơn
+    });
+    return new THREE.Mesh(geo, mat);
+  }
+
+  function makeAxisLabel(tex, pos){
+    const el = document.createElement('div'); el.className='axis-label';
+    window.katex.render(tex, el, {throwOnError:false});
+    const obj = new THREE.CSS2DObject(el); obj.position.copy(pos); return obj;
+  }
+  function makeLatexLabel(tex, pos){
+    const el = document.createElement('div'); el.className='eq-label';
+    window.katex.render(tex, el, {throwOnError:false});
+    const obj = new THREE.CSS2DObject(el); obj.position.copy(pos); return obj;
+  }
+
+  // ---------- Overlays / helpers ----------
+  const note = document.getElementById('note');
+  function setNote(tex){
+    note.innerHTML = "";
+    const div = document.createElement('div');
+    window.katex.render(tex, div, {throwOnError:false, displayMode:true});
+    note.appendChild(div);
+  }
+  function clearNote(){ note.innerHTML=""; }
+
+  const interceptGroup = new THREE.Group(); scene.add(interceptGroup); interceptGroup.visible=false;
+  const traceGroup     = new THREE.Group(); scene.add(traceGroup);     traceGroup.visible=false;
+  const sectionGroup   = new THREE.Group(); scene.add(sectionGroup);   sectionGroup.visible=false;
+  const symmetryGroup  = new THREE.Group(); scene.add(symmetryGroup);  symmetryGroup.visible=false;
+  // Plane mờ để hiển thị mặt phẳng trong TRACES
+const tracePlane = makePlaneMesh(0x8090ff, 0.10); // màu xanh nhạt, mờ
+scene.add(tracePlane);
+tracePlane.visible = false;
+let isPaused = false;
+  // ---------- Camera tween ----------
+  let camAnim = null;
+  function tweenCamera(toPos, toTarget, ms=800){
+    if (camAnim) cancelAnimationFrame(camAnim);
+    const fromPos = camera.position.clone();
+    const fromTgt = controls.target.clone();
+    const t0 = performance.now();
+    controls.enabled = false;
+    (function step(now){
+      const t = Math.min(1, (now - t0)/ms);
+      const s = t*t*(3-2*t); // smoothstep
+      camera.position.lerpVectors(fromPos, toPos, s);
+      controls.target.lerpVectors(fromTgt, toTarget, s);
+      controls.update();
+      if (t < 1) camAnim = requestAnimationFrame(step);
+      else { controls.enabled = true; }
+    })(t0);
+  }
+// ==== Góc nhìn chéo-ngang tầm để thấy rõ giao tuyến (zoom-out) ====
+const CAM_WIDE = AXLEN * 2.8;   // xa hơn để bao trọn đường/ mặt
+const Z_OFF    = AXLEN * 0.4;  // cao lên nhẹ để không bị đồng phẳng
+
+// helper: đặt camera theo hướng (dx,dy) và nâng Z theo hệ số zMul
+function viewWithDir(dx, dy, ms=600, zMul=1.4){
+  const p = new THREE.Vector3(dx, dy, 0).normalize().multiplyScalar(CAM_WIDE);
+  p.z = Z_OFF * zMul;                   // ← nâng/giảm độ “nhìn từ trên”
+  tweenCamera(p, new THREE.Vector3(0,0,0), ms);
+}
+
+// Oxy: muốn nhìn từ trên xuống hơn một chút → tăng zMul (ví dụ 1.8)
+function viewOxyAngleWide(){ viewWithDir( 1.0, -0.9, 600, 1.8); }
+// Oxz: hyperbola (nhìn từ +y, +x nhẹ)
+function viewOxzAngleWide(){ viewWithDir( 2.0, 0.75); }
+// Oyz: hyperbola (nhìn từ +x, -y nhẹ)
+function viewOyzAngleWide(){ viewWithDir(0.75, 0.75); }
+
+  // ==== Góc nhìn thẳng từng mặt phẳng & góc tổng quan ====
+const CAM_DIST = AXLEN * 1.25; // khoảng cách vừa đủ để "nhìn thẳng"
+const FAR_DIST = AXLEN * 1.8;  // khoảng cách xa để nhìn toàn cảnh
+
+function viewOxy() { // nhìn thẳng từ +Z xuống Oxy
+  tweenCamera(new THREE.Vector3(0, 0, CAM_DIST), new THREE.Vector3(0,0,0), 600);
+}
+function viewOxz() { // nhìn thẳng từ +Y vào Oxz
+  tweenCamera(new THREE.Vector3(0, CAM_DIST, 0.0001), new THREE.Vector3(0,0,0), 600);
+}
+function viewOyz() { // nhìn thẳng từ +X vào Oyz
+  tweenCamera(new THREE.Vector3(CAM_DIST, 0, 0.0001), new THREE.Vector3(0,0,0), 600);
+}
+function viewOverview() { // góc xa tổng quan
+  tweenCamera(new THREE.Vector3(FAR_DIST, -FAR_DIST, FAR_DIST), new THREE.Vector3(0,0,0), 700);
+}
+
+
+  // ---------- Intercepts ----------
+  function showIntercepts(){
+    hideAllOverlays();
+    this.classList.add('active');
+
+    // camera góc chéo nhìn rõ Oxy (thấy ±a, ±b)
+    tweenCamera(new THREE.Vector3(6.5, -3.5, 4.2), new THREE.Vector3(0,0,0), 700);
+
+    interceptGroup.visible=true;
+    interceptGroup.clear();
+
+    const pts = [
+      {p:new THREE.Vector3(+A,0,0), label:"(\\;a,\\,0,\\,0\\;)"},
+      {p:new THREE.Vector3(-A,0,0), label:"(\\;-a,\\,0,\\,0\\;)"},
+      {p:new THREE.Vector3(0,+B,0), label:"(\\;0,\\,b,\\,0\\;)"},
+      {p:new THREE.Vector3(0,-B,0), label:"(\\;0,\\,-b,\\,0\\;)"}
+    ];
+    const mat = new THREE.MeshBasicMaterial({color:0xff5252});
+    const sph = new THREE.SphereGeometry(0.08, 24, 16);
+    pts.forEach(({p,label})=>{
+      const m = new THREE.Mesh(sph, mat); m.position.copy(p); interceptGroup.add(m);
+      const t = makeLatexLabel(label, p.clone().add(new THREE.Vector3(0.15,0.12,0.1)));
+      interceptGroup.add(t);
+    });
+    setNote("\\textbf{Intercepts:}\\; (\\pm a,0,0),\\; (0,\\pm b,0)");
+  }
+
+  // ---------- Traces ----------
+ const TRACE_DELAY = 3000;  // 3s mỗi giai đoạn
+let traceStage = 0, traceTimer = null;
+
+function showTraces(){
+  hideAllOverlays();
+  this.classList.add('active');
+
+  // dùng plane mờ
+  gridOxy.visible=false; gridOxz.visible=false; gridOyz.visible=false;
+  tracePlane.visible = true;
+
+  traceGroup.visible=true;
+  traceGroup.clear();
+
+  // Stage 1: Oxy
+  setPlane(tracePlane, new THREE.Vector3(0,0,1), 0);
+  viewOxyAngleWide();
+  traceGroup.add( makeEllipse(A,B,0xFF4040) );
+  setNote("\\textbf{Trace Oxy (}z=0\\textbf{):}\\; \\dfrac{x^2}{a^2}+\\dfrac{y^2}{b^2}=1.");
+  traceStage = 1;
+
+  scheduleNextTraceStage();
+}
+
+function scheduleNextTraceStage(){
+  if (traceTimer){ clearTimeout(traceTimer); traceTimer = null; }
+  if (isPaused) return;
+  traceTimer = setTimeout(()=>{
+    if (traceStage===1){
+      // chuyển sang Oxz
+      traceGroup.clear();
+      setPlane(tracePlane, new THREE.Vector3(0,1,0), 0);
+      viewOxzAngleWide();
+      traceGroup.add( makeHyperbola_XZ(A,C,ZMAX,0xFF4040) );
+      setNote("\\textbf{Trace Oxz (}y=0\\textbf{):}\\; \\dfrac{x^2}{a^2}-\\dfrac{z^2}{c^2}=1.");
+      traceStage = 2;
+      scheduleNextTraceStage();
+    } else if (traceStage===2){
+      // chuyển sang Oyz
+      traceGroup.clear();
+      setPlane(tracePlane, new THREE.Vector3(1,0,0), 0);
+      viewOyzAngleWide();
+      traceGroup.add( makeHyperbola_YZ(B,C,ZMAX,0xFF4040) );
+      setNote("\\textbf{Trace Oyz (}x=0\\textbf{):}\\; \\dfrac{y^2}{b^2}-\\dfrac{z^2}{c^2}=1.");
+      traceStage = 3; // hết
+    }
+  }, TRACE_DELAY);
+}
+
+// gọi lại khi resume mà đang ở traces
+function resumeTraces(){
+  if (document.getElementById('btnTraces').classList.contains('active') && traceStage<3){
+    scheduleNextTraceStage();
+  }
+}
+
+
+
+
+  function makeEllipse(a,b,color){
+    const n=256, pts=[];
+    for(let i=0;i<=n;i++){
+      const th=2*Math.PI*i/n; pts.push(new THREE.Vector3(a*Math.cos(th), b*Math.sin(th), 0));
+    }
+    const g=new THREE.BufferGeometry().setFromPoints(pts);
+    return new THREE.Line(g, new THREE.LineBasicMaterial({color}));
+  }
+  function makeHyperbola_XZ(a,c,zmax,color){
+    const n=600, pts1=[], pts2=[];
+    for(let i=0;i<=n;i++){
+      const z=-zmax+(2*zmax)*i/n;
+      const val = 1 + (z*z)/(c*c);
+      const x = a*Math.sqrt(val);
+      pts1.push(new THREE.Vector3(+x,0,z));
+      pts2.push(new THREE.Vector3(-x,0,z));
+    }
+    const g1=new THREE.BufferGeometry().setFromPoints(pts1);
+    const g2=new THREE.BufferGeometry().setFromPoints(pts2);
+    const mat=new THREE.LineBasicMaterial({color});
+    const group=new THREE.Group();
+    group.add(new THREE.Line(g1,mat)); group.add(new THREE.Line(g2,mat));
+    return group;
+  }
+  function makeHyperbola_YZ(b,c,zmax,color){
+    const n=600, pts1=[], pts2=[];
+    for(let i=0;i<=n;i++){
+      const z=-zmax+(2*zmax)*i/n;
+      const val = 1 + (z*z)/(c*c);
+      const y = b*Math.sqrt(val);
+      pts1.push(new THREE.Vector3(0,+y,z));
+      pts2.push(new THREE.Vector3(0,-y,z));
+    }
+    const g1=new THREE.BufferGeometry().setFromPoints(pts1);
+    const g2=new THREE.BufferGeometry().setFromPoints(pts2);
+    const mat=new THREE.LineBasicMaterial({color});
+    const group=new THREE.Group();
+    group.add(new THREE.Line(g1,mat)); group.add(new THREE.Line(g2,mat));
+    return group;
+  }
+
+  // ---------- Sections ----------
+  // ===== Sections: dùng MẶT PHẲNG quét lần lượt //Oxy → //Oxz → //Oyz =====
+let sectionPhase=0, sectionAnim=null, kVal=0, sweepDir=1;
+
+function showSections(){
+  hideAllOverlays();
+  this.classList.add('active');
+
+  // Ẩn hết grid, vì giờ dùng plane chạy
+  gridOxy.visible=false; gridOxz.visible=false; gridOyz.visible=false;
+
+  sectionGroup.visible=true;
+  sectionGroup.clear();
+
+  // Tạo 1 plane "mờ" để quét và 2 line để vẽ giao tuyến (ellipse thì chỉ dùng lineE)
+  const planeMat = new THREE.MeshBasicMaterial({color:0x8090ff, side:THREE.DoubleSide, transparent:true, opacity:0.12, depthWrite:false});
+  const planeGeo = new THREE.PlaneGeometry(16,16);
+  const sweepPlane = new THREE.Mesh(planeGeo, planeMat);
+  sectionGroup.add(sweepPlane);
+
+  const lineMat = new THREE.LineBasicMaterial({color:0xFF4040});
+  const lineE = new THREE.Line(new THREE.BufferGeometry(), lineMat);     // ellipse cho //Oxy
+  const lineH1 = new THREE.Line(new THREE.BufferGeometry(), lineMat);    // nhánh 1 hyperbola
+  const lineH2 = new THREE.Line(new THREE.BufferGeometry(), lineMat);    // nhánh 2 hyperbola
+
+  // Bắt đầu với phase 1: //Oxy → z=k
+  sectionPhase=1; kVal=-ZMAX; sweepDir=+1;
+  sectionGroup.add(lineE);
+  setNote("\\textbf{Sections // Oxy:}\\; z=k\\;\\Rightarrow\\; \\dfrac{x^2}{a^2}+\\dfrac{y^2}{b^2}=1+\\dfrac{k^2}{c^2}.");
+  // đặt plane song song Oxy (normal (0,0,1))
+  sweepPlane.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,1));
+  viewOverview();
+
+  const upd = ()=>{
+    if (!sectionGroup.visible) return;
+
+    if (sectionPhase===1){
+      if (!isPaused){
+      // ---- Quét z = k (ellipse)
+      kVal += 0.03*sweepDir;
+      // cập nhật plane vị trí z=k
+      sweepPlane.position.set(0,0,kVal);
+
+      // vẽ ellipse theo k
+      const geoE = computeEllipseAtZ(A,B,C,kVal);
+      lineE.geometry.dispose();
+      lineE.geometry = geoE;
+    }
+      if (kVal > ZMAX){ // chuyển phase 2
+        sectionPhase = 2;
+        kVal = -1.2*B; sweepDir=+1;
+
+        // chuyển sang song song Oxz: y=k
+        sectionGroup.remove(lineE);
+        sectionGroup.add(lineH1); sectionGroup.add(lineH2);
+        setNote("\\textbf{Sections // Oxz:}\\; y=k\\;\\Rightarrow\\; \\dfrac{x^2}{a^2}-\\dfrac{z^2}{c^2}=1-\\dfrac{k^2}{b^2}.");
+        // orient plane normal (0,1,0)
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(0,1,0));
+        sweepPlane.quaternion.copy(q);
+        viewOverview();
+      }
+
+    } else if (sectionPhase===2){
+      if (!isPaused){
+      // ---- Quét y = k (hyperbola trong Oxz)
+      kVal += 0.02*sweepDir;
+      sweepPlane.position.set(0,kVal,0);
+
+      const {g1,g2} = computeHyperbolaXZ_atY(A,B,C,ZMAX,kVal);
+      lineH1.geometry.dispose(); lineH1.geometry = g1;
+      lineH2.geometry.dispose(); lineH2.geometry = g2;
+    }
+      if (kVal > 1.2*B){ // chuyển phase 3
+        sectionPhase = 3;
+        kVal = -1.2*A; sweepDir=+1;
+        if (!isPaused){
+        setNote("\\textbf{Sections // Oyz:}\\; x=k\\;\\Rightarrow\\; \\dfrac{y^2}{b^2}-\\dfrac{z^2}{c^2}=1-\\dfrac{k^2}{a^2}.");
+        // orient plane normal (1,0,0)
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(1,0,0));
+        sweepPlane.quaternion.copy(q);
+        viewOverview();
+      }
+    }
+    } else if (sectionPhase===3){
+
+      // ---- Quét x = k (hyperbola trong Oyz)
+      kVal += 0.02*sweepDir;
+      sweepPlane.position.set(kVal,0,0);
+
+      const {g1,g2} = computeHyperbolaYZ_atX(A,B,C,ZMAX,kVal);
+      lineH1.geometry.dispose(); lineH1.geometry = g1;
+      lineH2.geometry.dispose(); lineH2.geometry = g2;
+
+      if (kVal > 1.2*A){
+        // xong: tắt sections
+        sectionGroup.visible=false; clearNote();
+        cancelAnimationFrame(sectionAnim); sectionAnim=null; return;
+      }
+    }
+
+    sectionAnim = requestAnimationFrame(upd);
+  };
+
+  if (sectionAnim) cancelAnimationFrame(sectionAnim);
+  sectionAnim = requestAnimationFrame(upd);
+}
+
+// ==== Helpers cho sections ====
+
+// Ellipse ở z=k: x^2/a^2 + y^2/b^2 = 1 + k^2/c^2
+function computeEllipseAtZ(a,b,c,k){
+  const n=256, pts=[];
+  const s = Math.sqrt(1 + (k*k)/(c*c));
+  for(let i=0;i<=n;i++){
+    const th=2*Math.PI*i/n;
+    pts.push(new THREE.Vector3(a*s*Math.cos(th), b*s*Math.sin(th), k));
+  }
+  return new THREE.BufferGeometry().setFromPoints(pts);
+}
+
+// Hyperbola trong Oxz khi y=k: x^2/a^2 - z^2/c^2 = 1 - k^2/b^2
+function computeHyperbolaXZ_atY(a,b,c,zmax,k){
+  const S = 1 - (k*k)/(b*b);
+  const n=600, pts1=[], pts2=[];
+  for(let i=0;i<=n;i++){
+    const z=-zmax + (2*zmax)*i/n;
+    const val = S + (z*z)/(c*c); // có thể âm ở giữa
+    if (val>=0){
+      const x=a*Math.sqrt(val);
+      pts1.push(new THREE.Vector3(+x, k, z));
+      pts2.push(new THREE.Vector3(-x, k, z));
+    }
+  }
+  return {
+    g1: new THREE.BufferGeometry().setFromPoints(pts1),
+    g2: new THREE.BufferGeometry().setFromPoints(pts2)
+  };
+}
+
+// Hyperbola trong Oyz khi x=k: y^2/b^2 - z^2/c^2 = 1 - k^2/a^2
+function computeHyperbolaYZ_atX(a,b,c,zmax,k){
+  const S = 1 - (k*k)/(a*a);
+  const n=600, pts1=[], pts2=[];
+  for(let i=0;i<=n;i++){
+    const z=-zmax + (2*zmax)*i/n;
+    const val = S + (z*z)/(c*c);
+    if (val>=0){
+      const y=b*Math.sqrt(val);
+      pts1.push(new THREE.Vector3(k, +y, z));
+      pts2.push(new THREE.Vector3(k, -y, z));
+    }
+  }
+  return {
+    g1: new THREE.BufferGeometry().setFromPoints(pts1),
+    g2: new THREE.BufferGeometry().setFromPoints(pts2)
+  };
+}
+
+  function makeEllipseAtZ(a,b,k){
+    const n=256, pts=[];
+    const s = Math.sqrt(1 + (k*k)/(C*C));
+    for(let i=0;i<=n;i++){
+      const th=2*Math.PI*i/n; pts.push(new THREE.Vector3(a*s*Math.cos(th), b*s*Math.sin(th), k));
+    }
+    return new THREE.BufferGeometry().setFromPoints(pts);
+  }
+  function makeHyperbolaAtY(a,b,c,zmax,k){
+    const S = 1 - (k*k)/(b*b);
+    const n=600, pts1=[], pts2=[];
+    for(let i=0;i<=n;i++){
+      const z=-zmax+(2*zmax)*i/n;
+      const val = S + (z*z)/(c*c);
+      if (val>=0){
+        const x=a*Math.sqrt(val);
+        pts1.push(new THREE.Vector3(+x,k,z));
+        pts2.push(new THREE.Vector3(-x,k,z));
+      }
+    }
+    const g1=new THREE.BufferGeometry().setFromPoints(pts1);
+    const g2=new THREE.BufferGeometry().setFromPoints(pts2);
+    const group=new THREE.Group();
+    group.add(new THREE.Line(g1,new THREE.LineBasicMaterial({color:0xFF4040})));
+    group.add(new THREE.Line(g2,new THREE.LineBasicMaterial({color:0xFF4040})));
+    return new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0)]);
+  }
+  function makeHyperbolaAtX(a,b,c,zmax,k){
+    const S = 1 - (k*k)/(a*a);
+    const n=600, pts1=[], pts2=[];
+    for(let i=0;i<=n;i++){
+      const z=-zmax+(2*zmax)*i/n;
+      const val = S + (z*z)/(c*c);
+      if (val>=0){
+        const y=b*Math.sqrt(val);
+        pts1.push(new THREE.Vector3(k,+y,z));
+        pts2.push(new THREE.Vector3(k,-y,z));
+      }
+    }
+    const g1=new THREE.BufferGeometry().setFromPoints(pts1);
+    const g2=new THREE.BufferGeometry().setFromPoints(pts2);
+    const group=new THREE.Group();
+    group.add(new THREE.Line(g1,new THREE.LineBasicMaterial({color:0xFF4040})));
+    group.add(new THREE.Line(g2,new THREE.LineBasicMaterial({color:0xFF4040})));
+    return new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0)]);
+  }
+
+  // ---------- Centre ----------
+  function showCentre(){
+    hideAllOverlays();
+    this.classList.add('active');
+
+    // camera trung bình, focus vào gốc
+    tweenCamera(new THREE.Vector3(4.5, -3.8, 2.2), new THREE.Vector3(0,0,0), 700);
+
+    const g = new THREE.SphereGeometry(0.12, 24, 16);
+    const m = new THREE.MeshBasicMaterial({color:0xff5252});
+    const s = new THREE.Mesh(g,m); s.position.set(0,0,0);
+    const lbl = makeLatexLabel("(\\;0,\\,0,\\,0\\;)", new THREE.Vector3(0.18,0.12,0.12));
+    interceptGroup.clear(); interceptGroup.add(s); interceptGroup.add(lbl); interceptGroup.visible=true;
+    setNote("\\textbf{Centre:}\\; \\text{ The centre of this hyperboloid of one sheet is }(0,0,0).");
+  }
+
+  // ---------- Symmetry ----------
+  function showSymmetry(){
+    hideAllOverlays();
+    this.classList.add('active');
+
+    // camera xa để thấy rõ cả 3 mặt phẳng đối xứng
+viewOverview();
+
+
+    symmetryGroup.visible=true;
+    symmetryGroup.clear();
+    symmetryGroup.add(makePlane(new THREE.Vector3(0,0,1), 0, 0x4a5160, 0.2)); // Oxy
+    symmetryGroup.add(makePlane(new THREE.Vector3(0,1,0), 0, 0x4a5160, 0.2)); // Oxz
+    symmetryGroup.add(makePlane(new THREE.Vector3(1,0,0), 0, 0x4a5160, 0.2)); // Oyz
+    setNote("\\textbf{Symmetry:}\\; \\text{Symmetric about all coordinate planes.} ");
+  }
+  function makePlane(normal, constant, color, opacity){
+    const size=16;
+    const geo=new THREE.PlaneGeometry(size,size);
+    const mat=new THREE.MeshBasicMaterial({color, side:THREE.DoubleSide, transparent:true, opacity});
+    const mesh=new THREE.Mesh(geo,mat);
+    const up=new THREE.Vector3(0,0,1), n=normal.clone().normalize();
+    const q=new THREE.Quaternion().setFromUnitVectors(up,n);
+    mesh.quaternion.copy(q);
+    mesh.position.copy(n.clone().multiplyScalar(constant));
+    return mesh;
+  }
+// Tạo một plane "trống" có thể xoay/hướng lại nhiều lần
+function makePlaneMesh(color, opacity){
+  const mat = new THREE.MeshBasicMaterial({
+    color, side:THREE.DoubleSide, transparent:true, opacity, depthWrite:false
+  });
+  const geo = new THREE.PlaneGeometry(16,16);
+  return new THREE.Mesh(geo, mat);
+}
+
+// Đặt hướng & vị trí plane: normal "n", hằng số "d" (mặt: n·x = d)
+function setPlane(mesh, normal, d){
+  const up = new THREE.Vector3(0,0,1);
+  const n  = normal.clone().normalize();
+  const q  = new THREE.Quaternion().setFromUnitVectors(up, n);
+  mesh.quaternion.copy(q);
+  mesh.position.copy(n.multiplyScalar(d));
+}
+
+  // ---------- Buttons ----------
+  const btnEq = document.getElementById('btnEquation');
+  const btnI = document.getElementById('btnIntercepts');
+  const btnT = document.getElementById('btnTraces');
+  const btnS = document.getElementById('btnSections');
+  const btnC = document.getElementById('btnCentre');
+  const btnY = document.getElementById('btnSymmetry');
+  const btnResetAll = document.getElementById('btnResetAll');
+const btnPause    = document.getElementById('btnPause');
+
+  btnEq.onclick = showEquation;
+  btnI.onclick = showIntercepts;
+  btnT.onclick = showTraces;
+  btnS.onclick = showSections;
+  btnC.onclick = showCentre;
+  btnY.onclick = showSymmetry;
+  btnResetAll.onclick = ()=>{
+  // ẩn hết và huỷ timer/anim
+  hideAllOverlays();
+  isPaused = false;
+  btnPause.textContent = 'pause';
+};
+
+btnPause.onclick = ()=>{
+  isPaused = !isPaused;
+  btnPause.textContent = isPaused ? 'resume' : 'pause';
+
+  // dừng ngay timer của traces (sections đã tự dừng do isPaused)
+  if (isPaused){
+    if (traceTimer){ clearTimeout(traceTimer); traceTimer=null; }
+  } else {
+    // resume: chỉ cần lên lịch lại cho traces; sections tự chạy tiếp
+    resumeTraces();
+  }
+};
+
+  function hideAllOverlays(){
+  clearNote();
+  if (traceTimer){ clearTimeout(traceTimer); traceTimer=null; }
+  if (sectionAnim){ cancelAnimationFrame(sectionAnim); sectionAnim=null; }
+
+  interceptGroup.clear(); interceptGroup.visible=false;
+  traceGroup.clear();     traceGroup.visible=false;
+  sectionGroup.clear();   sectionGroup.visible=false;
+  symmetryGroup.clear();  symmetryGroup.visible=false;
+
+  eqObj.visible = false;
+  tracePlane.visible = false;
+
+  gridOxy.visible=true; gridOxz.visible=false; gridOyz.visible=false;
+
+  [btnEq,btnI,btnT,btnS,btnC,btnY].forEach(b=>b && b.classList.remove('active'));
+}
+
+  function showEquation(){
+  hideAllOverlays();
+  this.classList.add('active');
+  eqObj.visible = true;  // chỉ hiện khi bấm
+  setNote("\\textbf{Equation:}\\; \\dfrac{x^{2}}{a^{2}}+\\dfrac{y^{2}}{b^{2}}-\\dfrac{z^{2}}{c^{2}}=1.");
+  // (tuỳ chọn) đưa camera về góc tổng quan:
+  viewOxyAngleWide();
+}
+  // ---------- Render loop ----------
+  function animate(){
+    controls.update();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+
+  </script>
+</body>
+</html>

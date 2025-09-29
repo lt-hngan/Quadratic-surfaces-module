@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Parabolic Cylinder — Interactive Lesson (offline)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="./lib/katex-lite.css">
+<style>
+  html,body{margin:0;height:100%;background:#0a0e14;color:#eaeef2;font-family:system-ui;overflow:hidden}
+  #ui{position:fixed;top:10px;left:10px;z-index:20;background:#1118;border:1px solid #334;padding:10px 12px;border-radius:10px}
+  #ui .row{margin:4px 0}
+  #ui button{margin:2px 0 0 0; padding:6px 10px; border-radius:8px; border:1px solid #445; background:#1a1f2a; color:#eaeef2; cursor:pointer}
+  #ui button.active{background:#2c3344; color:#cfd8ff}
+  #ui2{position:fixed; top:10px; left:280px; z-index:20; background:#1118; border:1px solid #334; padding:10px 12px; border-radius:10px}
+  #ui2 button{margin:2px 0 0 0; padding:6px 10px; border-radius:8px; border:1px solid #445; background:#1a1f2a; color:#eaeef2; cursor:pointer}
+  #ui2 button.active{background:#2c3344; color:#cfd8ff}
+  #hint{position:fixed;right:10px;bottom:10px;z-index:20;background:#1118;border:1px solid #334;border-radius:8px;padding:6px 8px;font-size:12px;color:#c8cede}
+  #note{position:fixed;right:10px;top:10px;z-index:20;background:#1118;border:1px solid #334;border-radius:8px;padding:8px 10px;min-width:260px;max-width:42vw}
+  .axis-label{font-family:"KaTeX_Main","Latin Modern Math","STIX Two Text",serif;font-size:18px;color:#e8ecff;text-shadow:0 0 5px rgba(20,30,60,.65)}
+  .eq-label{font-family:"KaTeX_Main","Latin Modern Math","STIX Two Text",serif;font-size:18px;color:#e8ecff;text-shadow:0 0 5px rgba(20,30,60,.65)}
+  #c{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+  <div id="ui">
+    <div class="row" style="font-weight:700;margin-bottom:6px">Parabolic Cylinder</div>
+    <div class="row">
+      <button id="btnEquation">equation</button>
+      <button id="btnTraces">traces</button>
+      <button id="btnSections">sections</button>
+    </div>
+    <div class="row">
+      <button id="btnIntercepts">intercepts</button>
+      <button id="btnCentre">centre</button>
+      <button id="btnSymmetry">symmetry</button>
+    </div>
+  </div>
+  <div id="ui2">
+    <div style="font-weight:700;margin-bottom:6px">Control</div>
+    <button id="btnResetAll">reset</button>
+  </div>
+
+  <div id="hint">Kéo để xoay • Lăn/pinch để zoom • Shift+Kéo để pan</div>
+  <div id="note"></div>
+  <canvas id="c"></canvas>
+
+  <!-- Libraries -->
+  <script src="./lib/three.min.js"></script>
+  <script src="./lib/OrbitControls.js"></script>
+  <script src="./lib/CSS2DRenderer.js"></script>
+  <script src="./lib/katex.min.js"></script>
+
+<script>
+// Scene setup
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+
+const labelRenderer=new THREE.CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+Object.assign(labelRenderer.domElement.style,{position:'fixed',top:0,left:0,pointerEvents:'none',zIndex:10});
+document.body.appendChild(labelRenderer.domElement);
+
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e14);
+const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,0.1,200);
+camera.position.set(7,-7,5); camera.up.set(0,0,1);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.target.set(0,0,0); controls.update();
+
+addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight);labelRenderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();});
+
+// Lights
+scene.add(new THREE.HemisphereLight(0xffffff,0x223344,0.7));
+const dirLight=new THREE.DirectionalLight(0xffffff,0.5);dirLight.position.set(6,6,8);scene.add(dirLight);
+
+// Axes
+const AXLEN=7;
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-AXLEN,0,0),new THREE.Vector3(AXLEN,0,0)]), new THREE.LineBasicMaterial({color:0xff6b6b})));
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-AXLEN,0),new THREE.Vector3(0,AXLEN,0)]), new THREE.LineBasicMaterial({color:0x7be77b})));
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-AXLEN),new THREE.Vector3(0,0,AXLEN)]), new THREE.LineBasicMaterial({color:0x6fa8ff})));
+
+// Params
+let a=1.5;
+let X0=0,Y0=0,Z0=0;
+const X_MAX=3.0,Z_MAX=3.0;
+const NX=100,NZ=100;
+
+// Build parabolic cylinder
+function buildParabolicCylinder(a,xMax=X_MAX,zMax=Z_MAX,nx=NX,nz=NZ){
+  const pos=new Float32Array((nx+1)*(nz+1)*3);let p=0;
+  for(let ix=0;ix<=nx;ix++){
+    const x=-xMax+2*xMax*ix/nx;
+    const y=(x*x)/(a*a);
+    for(let iz=0;iz<=nz;iz++){
+      const z=-zMax+2*zMax*iz/nz;
+      pos[p++]=X0+x; pos[p++]=Y0+y; pos[p++]=Z0+z;
+    }
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const idx=[];
+  for(let ix=0;ix<nx;ix++){
+    for(let iz=0;iz<nz;iz++){
+      const A=ix*(nz+1)+iz, A1=A+1, B=(ix+1)*(nz+1)+iz, B1=B+1;
+      idx.push(A,B,A1,B,B1,A1);
+    }
+  }
+  geo.setIndex(idx); geo.computeVertexNormals();
+  const mat=new THREE.MeshStandardMaterial({color:0xbfd7ff,transparent:true,opacity:0.9,side:THREE.DoubleSide});
+  return new THREE.Mesh(geo,mat);
+}
+const cyl=buildParabolicCylinder(a); scene.add(cyl);
+
+// Labels
+function makeAxisLabel(tex,pos){const el=document.createElement('div');el.className='axis-label';katex.render(tex,el,{throwOnError:false});return new THREE.CSS2DObject(el).set("position",pos);}
+function makeLatexLabel(tex,pos){const el=document.createElement('div');el.className='eq-label';katex.render(tex,el,{throwOnError:false});const obj=new THREE.CSS2DObject(el);obj.position.copy(pos);return obj;}
+scene.add(makeLatexLabel("x",new THREE.Vector3(AXLEN+0.3,0,0)));
+scene.add(makeLatexLabel("y",new THREE.Vector3(0,AXLEN+0.3,0)));
+scene.add(makeLatexLabel("z",new THREE.Vector3(0,0,AXLEN+0.3)));
+
+const eqObj=makeLatexLabel(`y=\\dfrac{x^{2}}{a^{2}}`,new THREE.Vector3(0,0,3.5));
+scene.add(eqObj); eqObj.visible=false;
+
+// Overlay groups
+const note=document.getElementById('note');
+function setNote(tex){note.innerHTML="";const d=document.createElement('div');katex.render(tex,d,{throwOnError:false,displayMode:true});note.appendChild(d);}
+function clearNote(){note.innerHTML="";}
+const interceptGroup=new THREE.Group();scene.add(interceptGroup);interceptGroup.visible=false;
+const traceGroup=new THREE.Group();scene.add(traceGroup);traceGroup.visible=false;
+const sectionGroup=new THREE.Group();scene.add(sectionGroup);sectionGroup.visible=false;
+const symmetryGroup=new THREE.Group();scene.add(symmetryGroup);symmetryGroup.visible=false;
+
+// Helpers
+function makeLine(pts,color=0xFF4040){return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color}));}
+
+// Traces
+function makeTraceXZ_Parabola(a,xMax=X_MAX,seg=200,color=0xFF4040){const pts=[];for(let i=0;i<=seg;i++){const x=-xMax+2*xMax*i/seg;const y=(x*x)/(a*a);pts.push(new THREE.Vector3(x,y,0));}return makeLine(pts,color);}
+function makeTraceXY(a,xMax=X_MAX,seg=200,color=0xFF4040){const pts=[];for(let i=0;i<=seg;i++){const x=-xMax+2*xMax*i/seg;const y=(x*x)/(a*a);pts.push(new THREE.Vector3(x,y,0));}return makeLine(pts,color);}
+
+// Sections //Oxy: z=k parabola y=x^2/a^2
+function makeSectionZ(k,a,xMax=X_MAX,seg=200,color=0xFF4040){const pts=[];for(let i=0;i<=seg;i++){const x=-xMax+2*xMax*i/seg;const y=(x*x)/(a*a);pts.push(new THREE.Vector3(x,y,k));}return makeLine(pts,color);}
+
+// Buttons
+const btnEq=document.getElementById('btnEquation');
+const btnI=document.getElementById('btnIntercepts');
+const btnT=document.getElementById('btnTraces');
+const btnS=document.getElementById('btnSections');
+const btnC=document.getElementById('btnCentre');
+const btnY=document.getElementById('btnSymmetry');
+const btnResetAll=document.getElementById('btnResetAll');
+
+btnEq.onclick=showEquation;btnI.onclick=showIntercepts;btnT.onclick=showTraces;btnS.onclick=showSections;btnC.onclick=showCentre;btnY.onclick=showSymmetry;btnResetAll.onclick=()=>hideAll();
+
+function hideAll(){clearNote();interceptGroup.clear();traceGroup.clear();sectionGroup.clear();symmetryGroup.clear();interceptGroup.visible=traceGroup.visible=sectionGroup.visible=symmetryGroup.visible=false;eqObj.visible=false;[btnEq,btnI,btnT,btnS,btnC,btnY].forEach(b=>b.classList.remove('active'));}
+
+// Equation
+function showEquation(){hideAll();this.classList.add('active');eqObj.visible=true;setNote("\\textbf{Equation: } y=\\tfrac{x^{2}}{a^{2}}");}
+// Intercepts
+function showIntercepts(){hideAll();this.classList.add('active');interceptGroup.visible=true;const s=new THREE.Mesh(new THREE.SphereGeometry(0.1,16,12),new THREE.MeshBasicMaterial({color:0xff5252}));s.position.set(0,0,0);interceptGroup.add(s);interceptGroup.add(makeLatexLabel("(0,0,0)",new THREE.Vector3(0.2,0.2,0)));setNote("\\textbf{Intercept: } only origin (0,0,0).");}
+// Traces
+function showTraces(){hideAll();this.classList.add('active');traceGroup.visible=true;traceGroup.add(makeTraceXY(a));setNote("\\textbf{Traces: } z=0: y=x^2/a^2 (parabola).");}
+// Sections
+function showSections(){hideAll();this.classList.add('active');sectionGroup.visible=true;sectionGroup.add(makeSectionZ(1.5,a));setNote("\\textbf{Sections: } z=k ⇒ parabola (same as base).");}
+// Centre
+function showCentre(){hideAll();this.classList.add('active');interceptGroup.visible=true;const s=new THREE.Mesh(new THREE.SphereGeometry(0.1,16,12),new THREE.MeshBasicMaterial({color:0xff5252}));s.position.set(0,0,0);interceptGroup.add(s);setNote("\\textbf{Centre: } (0,0,0).");}
+// Symmetry
+function showSymmetry(){hideAll();this.classList.add('active');symmetryGroup.visible=true;const geo=new THREE.PlaneGeometry(14,14);const mat=new THREE.MeshBasicMaterial({color:0x4a5160,transparent:true,opacity:0.2,side:THREE.DoubleSide});const mesh=new THREE.Mesh(geo,mat);mesh.rotation.y=Math.PI/2;symmetryGroup.add(mesh);setNote("\\textbf{Symmetry: } symmetric about the yz-plane (x=0).");}
+
+// Loop
+function animate(){controls.update();renderer.render(scene,camera);labelRenderer.render(scene,camera);requestAnimationFrame(animate);}
+animate();
+</script>
+</body>
+</html>

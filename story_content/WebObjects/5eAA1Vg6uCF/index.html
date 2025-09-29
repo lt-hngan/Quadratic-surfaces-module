@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Parabolic Cylinder</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="./lib/katex.min.css">
+<style>
+  html,body{margin:0;height:100%;background:#0a0e14;color:#eaeef2;font-family:system-ui;overflow:hidden}
+  #hud{position:fixed;top:10px;left:10px;z-index:10;background:#1118;border:1px solid #334;padding:10px 12px;border-radius:8px}
+  #hud button,#hud input{margin:3px 0}
+  #hint{position:fixed;right:10px;bottom:10px;z-index:10;background:#1118;border:1px solid #334;border-radius:8px;padding:6px 8px;font-size:12px;color:#c8cede}
+  .axis-label{font-family:"KaTeX_Main","Latin Modern Math","STIX Two Text",serif;font-size:18px;color:#e8ecff;text-shadow:0 0 4px rgba(20,30,60,.6);user-select:none;pointer-events:none}
+  .eq-white{color:#ffffff;text-shadow:0 0 6px rgba(0,0,0,.35)}
+  .eq-red{color:#ff5252;text-shadow:0 0 6px rgba(60,10,10,.45)}
+  #c{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div style="font-weight:700;margin-bottom:6px">Parabolic Cylinder</div>
+  <label>Duration (s): <input id="dur" type="number" value="8" min="3" max="60" style="width:64px"></label><br>
+  <label> p (width): <input id="p" type="number" value="0.8" step="0.1" style="width:64px"></label><br>
+  <!-- Mặc định thấp hơn đầu mũi tên trục z (AXLEN=6) một chút -->
+  <label> L (along z): <input id="len" type="number" value="5.0" step="0.1" style="width:64px"></label><br>
+  <label> X<sub>max</sub>: <input id="xmax" type="number" value="2.2" step="0.1" style="width:64px"></label>
+  <div style="margin-top:4px"><button id="play">Play/Pause</button> <button id="reset">Reset</button></div>
+</div>
+
+<div id="hint">Kéo để xoay • Lăn/pinch để zoom • Shift+Kéo để di chuyển</div>
+<canvas id="c"></canvas>
+
+<script src="./lib/three.min.js"></script>
+<script src="./lib/OrbitControls.js"></script>
+<script src="./lib/CSS2DRenderer.js"></script>
+<script src="./lib/katex.min.js"></script>
+
+<script>
+// === Renderer & label renderer ===
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+
+const labelRenderer = new THREE.CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, {position:'fixed', top:'0', left:'0', pointerEvents:'none', zIndex:'5'});
+document.body.appendChild(labelRenderer.domElement);
+
+// === Scene / Camera / Controls ===
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0e14);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(6,-6,4);
+camera.up.set(0,0,1);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0,0,0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.zoomSpeed = 0.25;
+controls.minDistance = 3.0;
+controls.maxDistance = 40.0;
+controls.update();
+
+// Resize
+addEventListener('resize', ()=>{
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+});
+
+// Lights
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.8));
+const dir = new THREE.DirectionalLight(0xffffff, 0.7); dir.position.set(6,6,8); scene.add(dir);
+
+// Axes + grid
+const AXLEN = 6;
+const matX = new THREE.LineBasicMaterial({color:0xff6b6b, transparent:true, opacity:0.7});
+const matY = new THREE.LineBasicMaterial({color:0x7be77b, transparent:true, opacity:0.7});
+const matZ = new THREE.LineBasicMaterial({color:0x6fa8ff, transparent:true, opacity:0.9});
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-AXLEN,0,0), new THREE.Vector3(AXLEN,0,0)]), matX));
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-AXLEN,0), new THREE.Vector3(0,AXLEN,0)]), matY));
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-AXLEN), new THREE.Vector3(0,0,AXLEN)]), matZ));
+const cone = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.25, 16), new THREE.MeshBasicMaterial({color:0x6fa8ff, transparent:true, opacity:0.9}));
+cone.position.set(0,0,AXLEN); cone.rotation.x = Math.PI/2; scene.add(cone);
+
+function makeGrid(size, divisions, c1, c2, opacity){
+  const g = new THREE.GridHelper(size, divisions, c1, c2);
+  if (Array.isArray(g.material)) g.material.forEach(m=>{ m.transparent = true; m.opacity = opacity; });
+  else { g.material.transparent = true; g.material.opacity = opacity; }
+  return g;
+}
+// Oxy (z=0)
+const gridOxy = makeGrid(18, 18, 0xb6bbcc, 0x84878c, 0.22);
+gridOxy.rotation.x = Math.PI/2;
+scene.add(gridOxy);
+// Oxz (y=0)
+const gridOxz = makeGrid(18, 18, 0xb6bbcc, 0x84878c, 0.18);
+scene.add(gridOxz);
+
+// ------- KaTeX label helpers -------
+function makeLatexLabel(tex, pos, className='axis-label'){
+  const el = document.createElement('div'); el.className = className;
+  window.katex.render(tex, el, {throwOnError:false});
+  const obj = new THREE.CSS2DObject(el); obj.position.copy(pos); return obj;
+}
+const OFFSET = 0.25;
+scene.add(
+  makeLatexLabel("\\mathit{x}", new THREE.Vector3(AXLEN+OFFSET,0,0)),
+  makeLatexLabel("\\mathit{y}", new THREE.Vector3(0,AXLEN+OFFSET,0)),
+  makeLatexLabel("\\mathit{z}", new THREE.Vector3(0,0,AXLEN+OFFSET)),
+);
+
+// ------- Inputs -------
+const durInput = document.getElementById('dur');
+const pInput   = document.getElementById('p');
+const lenInput = document.getElementById('len');
+const xmaxInput= document.getElementById('xmax');
+
+let P = Math.max(0.05, parseFloat(pInput.value));      // x^2 = 2 p y
+let L = Math.max(0.2, parseFloat(lenInput.value));     // translation length along z
+let XMAX = Math.max(0.2, parseFloat(xmaxInput.value)); // domain |x|<=XMAX
+let durationSec=parseFloat(durInput.value);
+
+// Clamp L to be a little below the z-axis arrow tip
+function maxAllowedLen(){ return AXLEN - 0.3; } // lower than arrow a bit
+function clampLen(v){
+  const m = maxAllowedLen();
+  return Math.min(Math.max(0.2, v), m);
+}
+L = clampLen(L);
+lenInput.value = L.toFixed(1);
+
+// Derived Y range from XMAX and p
+function yFromX(x){ return (x*x)/(2*P); }
+function getYmax(){ return Math.max(yFromX(XMAX), 1.0); }
+
+// ------- Parabola profile in z=0 (moves along z during sweep) -------
+let profileGrp = null, follower=null, eqParLabel=null;
+const LABEL_OFFSET_DOWN = 0.22; // đặt label thấp hơn parabol một xíu
+
+function buildParabolaProfile(pts=160){
+  if (profileGrp && profileGrp.parent){ profileGrp.parent.remove(profileGrp); }
+  profileGrp = new THREE.Group();
+
+  const arr=[];
+  // Parameterize by s in [-XMAX,XMAX], y = s^2/(2p), z = 0 initially
+  for(let i=0;i<=pts;i++){
+    const s = -XMAX + 2*XMAX*i/pts;
+    arr.push(new THREE.Vector3(s, yFromX(s), 0));
+  }
+  const g = new THREE.BufferGeometry().setFromPoints(arr);
+  // --- Parabola line: RED ---
+  const m = new THREE.LineBasicMaterial({color:0xff5252});
+  const line = new THREE.Line(g, m);
+  profileGrp.add(line);
+
+  // small marker at vertex (0,0,0) — moves with profile group
+  follower = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, 16, 12),
+    new THREE.MeshBasicMaterial({color:0xffffff})
+  );
+  follower.position.set(0,0,0);
+  profileGrp.add(follower);
+
+  // --- Equation label attached to the moving profile (RED) ---
+  const xL = Math.min(XMAX*0.6, XMAX-0.2);
+  // đặt THẤP HƠN parabol một xíu: yFromX(xL) - LABEL_OFFSET_DOWN
+  eqParLabel = makeLatexLabel(
+    `\\;x^{2}=2\\,p\\,y\\;\\;(z=0),\\;p=${P.toFixed(2)}`,
+    new THREE.Vector3(xL, yFromX(xL) - LABEL_OFFSET_DOWN, 0),
+    'axis-label eq-red'
+  );
+  profileGrp.add(eqParLabel);
+
+  scene.add(profileGrp);
+}
+buildParabolaProfile();
+
+// ------- Cylinder equation label (show after sweep completes) -------
+let eqSurf = null;
+function createOrUpdateSurfLabel(){
+  if (eqSurf && eqSurf.parent) eqSurf.parent.remove(eqSurf);
+  // đặt trước mặt phẳng z = L một xíu nhưng vẫn thấp hơn đầu mũi tên trục z
+  const yTop = getYmax() + 0.5;
+  eqSurf = makeLatexLabel(
+    `\\;x^{2}=2\\,p\\,y,\\;p=${P.toFixed(2)}`,
+    new THREE.Vector3(0, yTop, Math.min(L + 0.2, maxAllowedLen())), // không vượt arrow
+    'axis-label eq-white'
+  );
+  eqSurf.visible = false;
+  scene.add(eqSurf);
+}
+createOrUpdateSurfLabel();
+
+// ------- Sweep surface (translation along +z) -------
+let meshSurf=null, playing=false, tPrev=0, lenNow=0;
+
+function buildSurface(len){
+  if (meshSurf){ meshSurf.geometry.dispose(); scene.remove(meshSurf); meshSurf=null; }
+
+  const uSeg = 120; // along x (profile)
+  const vSeg = 60;  // along z (translation)
+  const positions = new Float32Array((uSeg+1)*(vSeg+1)*3);
+
+  let p=0;
+  for (let iv=0; iv<=vSeg; iv++){
+    const t = (len)*iv/vSeg; // z
+    for (let iu=0; iu<=uSeg; iu++){
+      const s = -XMAX + 2*XMAX*iu/uSeg; // x
+      const x=s, y=yFromX(s), z=t;
+      positions[p++]=x; positions[p++]=y; positions[p++]=z;
+    }
+  }
+
+  const idx=[];
+  for(let iv=0; iv<vSeg; iv++){
+    for(let iu=0; iu<uSeg; iu++){
+      const a=iv*(uSeg+1)+iu, b=a+1, c=(iv+1)*(uSeg+1)+iu, d=c+1;
+      idx.push(a,c,b, b,c,d);
+    }
+  }
+
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+
+  // --- Cylinder material: TEAL (xanh ngọc) ---
+  const mat = new THREE.MeshStandardMaterial({
+    color:0xbfd7ff,
+    roughness:0.35, metalness:0.0,
+    side:THREE.DoubleSide, transparent:true, opacity:0.95
+  });
+
+  meshSurf = new THREE.Mesh(geo, mat);
+  scene.add(meshSurf);
+
+  // Move the generating parabola group to the front face at z = len
+  if (profileGrp){ profileGrp.position.set(0,0,len); }
+}
+
+// initial surface with zero length (just the generating curve at z=0)
+buildSurface(0);
+
+// Loop
+function tick(ts){
+  if(!tPrev) tPrev=ts;
+  const dt=(ts-tPrev)/1000; tPrev=ts;
+
+  if(playing){
+    const inc = (L/durationSec)*dt;
+    lenNow = Math.min(L, lenNow + inc);
+    buildSurface(lenNow);
+    if (lenNow>=L){
+      playing=false;
+      if (eqSurf) eqSurf.visible = true; // show cylinder equation when done
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// UI
+document.getElementById('play').onclick=()=>{ if(lenNow<L) playing=!playing; };
+document.getElementById('reset').onclick=()=>{
+  P = Math.max(0.05, parseFloat(pInput.value));
+  L = clampLen(parseFloat(lenInput.value)); // kẹp để luôn thấp hơn mũi tên z
+  lenInput.value = L.toFixed(1);
+  XMAX = Math.max(0.2, parseFloat(xmaxInput.value));
+  durationSec = parseFloat(durInput.value);
+  lenNow = 0; playing=false;
+
+  // rebuild profile & labels (parabola + its moving label)
+  buildParabolaProfile(Math.max(160, 2*120));
+  createOrUpdateSurfLabel();
+  if (eqSurf) eqSurf.visible = false;
+
+  // reset surface
+  buildSurface(0);
+};
+</script>
+</body>
+</html>
