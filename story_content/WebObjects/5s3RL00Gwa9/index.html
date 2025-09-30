@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Cone — Interactive Lesson (offline)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="./lib/katex-lite.css">
+<style>
+  html,body{margin:0;height:100%;background:#0a0e14;color:#eaeef2;font-family:system-ui;overflow:hidden}
+  #ui{position:fixed;top:10px;left:10px;z-index:20;background:#1118;border:1px solid #334;padding:10px 12px;border-radius:10px}
+  #ui .row{margin:4px 0}
+  #ui button{margin:2px 0 0 0; padding:6px 10px; border-radius:8px; border:1px solid #445; background:#1a1f2a; color:#eaeef2; cursor:pointer}
+  #ui button.active{background:#2c3344; color:#cfd8ff}
+  #ui2{position:fixed; top:10px; left:280px; z-index:20; background:#1118; border:1px solid #334; padding:10px 12px; border-radius:10px}
+  #ui2 button{margin:2px 0 0 0; padding:6px 10px; border-radius:8px; border:1px solid #445; background:#1a1f2a; color:#eaeef2; cursor:pointer}
+  #ui2 button.active{background:#2c3344; color:#cfd8ff}
+  #hint{position:fixed;right:10px;bottom:10px;z-index:20;background:#1118;border:1px solid #334;border-radius:8px;padding:6px 8px;font-size:12px;color:#c8cede}
+  #note{position:fixed;right:10px;top:10px;z-index:20;background:#1118;border:1px solid #334;border-radius:8px;padding:8px 10px;min-width:260px;max-width:42vw}
+  #note{ position:absolute; top:10px; right:10px; max-width:calc(100% - 20px); overflow:hidden; }
+#note .katex, #note .katex-display{ font-size:clamp(12px, 1.8vw, 16px); }
+#note .katex-display{ overflow-x:auto; }
+  .katex-block{font-size:16px}
+  .axis-label{font-family:"KaTeX_Main","Latin Modern Math","STIX Two Text",serif;font-size:18px;color:#e8ecff;text-shadow:0 0 5px rgba(20,30,60,.65);user-select:none;pointer-events:none}
+  .eq-label{font-family:"KaTeX_Main","Latin Modern Math","STIX Two Text",serif;font-size:18px;color:#e8ecff;text-shadow:0 0 5px rgba(20,30,60,.65);pointer-events:none}
+  /* KaTeX: hiển thị lớp HTML & ẩn lớp MathML */
+.katex .katex-html{
+  
+  position: absolute !important;
+  left: 0; top: 0;
+  height: 1px; width: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  clip: rect(1px, 1px, 1px, 1px);
+  -webkit-clip-path: inset(50%);
+          clip-path: inset(50%);
+  padding: 0; border: 0;
+}
+
+.katex .katex-mathml{
+  display: inline-block !important;
+  position: relative !important;
+}
+
+.katex-display{
+  display: block !important;
+  margin: 0.5em 0;
+}
+
+  #c{display:block;width:100vw;height:100vh}
+
+</style>
+</head>
+<body>
+  <div id="ui">
+    <div class="row" style="font-weight:700;margin-bottom:6px">Cone</div>
+    <div class="row">
+      <button id="btnEquation">equation</button>
+      <button id="btnTraces">traces</button>
+      <button id="btnSections">sections</button>
+    </div>
+    <div class="row">
+      <button id="btnIntercepts">intercepts</button>
+      <button id="btnCentre">centre</button>
+      <button id="btnSymmetry">symmetry</button>
+    </div>
+  </div>
+  <div id="ui2">
+    <div style="font-weight:700;margin-bottom:6px">Control</div>
+    <button id="btnResetAll">reset</button>
+    <button id="btnPause">pause</button>
+  </div>
+
+  <div id="hint">Kéo để xoay • Lăn/pinch để zoom • Shift+Kéo để pan</div>
+  <div id="note"></div>
+  <canvas id="c"></canvas>
+
+  <!-- Libraries -->
+  <script src="./lib/three.min.js"></script>
+  <script src="./lib/OrbitControls.js"></script>
+  <script src="./lib/CSS2DRenderer.js"></script>
+  <script src="./lib/katex.min.js"></script>
+
+  <script>
+  // ---------- Scene / Camera / Renderers ----------
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+  renderer.setSize(innerWidth, innerHeight);
+
+  const labelRenderer = new THREE.CSS2DRenderer();
+  labelRenderer.setSize(innerWidth, innerHeight);
+  Object.assign(labelRenderer.domElement.style,{position:'fixed',top:'0',left:'0',pointerEvents:'none',zIndex:'10'});
+  document.body.appendChild(labelRenderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0e14);
+
+  const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 200);
+  camera.position.set(7,-7,5);
+  camera.up.set(0,0,1); // Z-up
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0,0,0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.zoomSpeed = 0.25;
+  controls.minDistance = 3.0;
+  controls.maxDistance = 40.0;
+  controls.update();
+
+  addEventListener('resize', ()=>{
+    renderer.setSize(innerWidth, innerHeight);
+    labelRenderer.setSize(innerWidth, innerHeight);
+    camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  });
+
+  // ---------- Lights ----------
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.70));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.45);
+  dirLight.position.set(6,6,8); scene.add(dirLight);
+
+  // ---------- Axes + grids ----------
+  const AXLEN = 7;
+  const matX = new THREE.LineBasicMaterial({color:0xff6b6b, transparent:true, opacity:0.75});
+  const matY = new THREE.LineBasicMaterial({color:0x7be77b, transparent:true, opacity:0.75});
+  const matZ = new THREE.LineBasicMaterial({color:0x6fa8ff, transparent:true, opacity:0.95});
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-AXLEN,0,0), new THREE.Vector3(AXLEN,0,0)]), matX));
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-AXLEN,0), new THREE.Vector3(0,AXLEN,0)]), matY));
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-AXLEN), new THREE.Vector3(0,0,AXLEN)]), matZ));
+
+  function addAxisArrow(dirVec, tipPos, color=0x6fa8ff){
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.30, 20),
+      new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.95}));
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dirVec.clone().normalize());
+    cone.quaternion.copy(q); cone.position.copy(tipPos); scene.add(cone); return cone;
+  }
+  addAxisArrow(new THREE.Vector3(1,0,0), new THREE.Vector3(AXLEN,0,0), 0xff6b6b);
+  addAxisArrow(new THREE.Vector3(0,1,0), new THREE.Vector3(0,AXLEN,0), 0x7be77b);
+  addAxisArrow(new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,AXLEN), 0x6fa8ff);
+
+  const gridOxy = new THREE.GridHelper(16, 16, 0xa7abc2, 0xb3b5c4);
+  gridOxy.rotation.x = Math.PI/2; makeGridTransparent(gridOxy, 0.22); scene.add(gridOxy);
+  const gridOxz = new THREE.GridHelper(16, 16, 0xa7abc2, 0xb3b5c4);
+  makeGridTransparent(gridOxz, 0.22); gridOxz.visible=false; scene.add(gridOxz);
+  const gridOyz = new THREE.GridHelper(16, 16, 0xa7abc2, 0xb3b5c4);
+  gridOyz.rotation.z = Math.PI/2; makeGridTransparent(gridOyz, 0.22); gridOyz.visible=false; scene.add(gridOyz);
+  function makeGridTransparent(grid, opacity){
+    if (Array.isArray(grid.material)) grid.material.forEach(m=>{m.transparent=true; m.opacity=opacity;});
+    else { grid.material.transparent=true; grid.material.opacity=opacity; }
+  }
+
+  // ---------- Cone params (double cone along z) ----------
+  let X0=0, Y0=0, Z0=0;      // centre
+  let a=0.8, b=1.2;          // slope factors (z^2 = (x^2)/a^2 + (y^2)/b^2) -> lớn a,b => nón mở hẹp
+  const T_MAX = 4.0;         // chiều cao mỗi nón (clip phạm vi hiển thị)
+  const SEG_T = 140, SEG_V = 160;
+
+  // ---------- Build cone mesh (two sheets, z = ± t; x = a t cos v; y = b t sin v) ----------
+  function buildCone(x0,y0,z0,a,b,tMax=T_MAX, tSeg=SEG_T, vSeg=SEG_V){
+    const group = new THREE.Group();
+    function sheet(sign=+1){
+      const tS=Math.max(2,tSeg), vS=Math.max(12,vSeg);
+      const pos = new Float32Array((tS+1)*(vS+1)*3); let p=0;
+      for(let it=0; it<=tS; it++){
+        const t = tMax * it/tS;    // 0..T_MAX
+        for(let iv=0; iv<=vS; iv++){
+          const th = 2*Math.PI*iv/vS;
+          const cs=Math.cos(th), sn=Math.sin(th);
+          pos[p++] = x0 + a*t*cs;
+          pos[p++] = y0 + b*t*sn;
+          pos[p++] = z0 + sign*t;
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+      const idx=[];
+      for(let it=0; it<tS; it++){
+        for(let iv=0; iv<vS; iv++){
+          const A=it*(vS+1)+iv, A1=A+1, B=(it+1)*(vS+1)+iv, B1=B+1;
+          idx.push(A,B,A1, B,B1,A1);
+        }
+      }
+      geo.setIndex(idx); geo.computeVertexNormals();
+      const mat = new THREE.MeshStandardMaterial({
+        color:0xbfd7ff, roughness:0.55, metalness:0.0,
+        side:THREE.DoubleSide, transparent:true, opacity:0.93
+      });
+      return new THREE.Mesh(geo, mat);
+    }
+    group.add(sheet(+1));
+    group.add(sheet(-1));
+    return group;
+  }
+  const cone = buildCone(X0,Y0,Z0,a,b);
+  scene.add(cone);
+
+  // ---------- Labels ----------
+  function makeAxisLabel(tex, pos){
+    const el = document.createElement('div'); el.className='axis-label';
+    window.katex.render(tex, el, {throwOnError:false});
+    const obj = new THREE.CSS2DObject(el); obj.position.copy(pos); return obj;
+  }
+  function makeLatexLabel(tex, pos){
+    const el = document.createElement('div'); el.className='eq-label';
+    window.katex.render(tex, el, {throwOnError:false});
+    const obj = new THREE.CSS2DObject(el); obj.position.copy(pos); return obj;
+  }
+  scene.add(makeAxisLabel("\\mathit{x}", new THREE.Vector3(AXLEN+0.3,0,0)));
+  scene.add(makeAxisLabel("\\mathit{y}", new THREE.Vector3(0,AXLEN+0.3,0)));
+  scene.add(makeAxisLabel("\\mathit{z}", new THREE.Vector3(0,0,AXLEN+0.3)));
+
+  const eqOffset = 0.35;
+  const eqObj = makeLatexLabel(
+    `\\dfrac{x^{2}}{a^{2}}+\\dfrac{y^{2}}{b^{2}}=z^{2}`,
+    new THREE.Vector3(X0, Y0, Z0 + 0.4 + eqOffset)
+  );
+  scene.add(eqObj); eqObj.visible=false;
+
+  // ---------- Overlay groups ----------
+  // ---------- Overlay groups ----------
+(function(){
+  const noteEl = document.getElementById('note');
+  if (!noteEl) {
+    // fallback an toàn để không vỡ code phía dưới
+    window.setNote = function(){};
+    window.clearNote = function(){};
+    return;
+  }
+
+  const NOTE_MARGIN = 20; // px mép phải
+
+  function fitNoteBox(){
+    const maxW = document.documentElement.clientWidth - NOTE_MARGIN;
+    noteEl.style.maxWidth = maxW + 'px';
+    const w = noteEl.scrollWidth || maxW;
+    const s = Math.min(1, maxW / w);
+    noteEl.style.transformOrigin = 'top right';
+    noteEl.style.transform = 'scale(' + s + ')';
+  }
+
+  // Ghi đè setNote/clearNote ở global để phần còn lại dùng như cũ
+  window.setNote = function(tex){
+    noteEl.innerHTML = "";
+    const div = document.createElement('div');
+    window.katex.render(tex, div, {throwOnError:false, displayMode:true});
+    noteEl.appendChild(div);
+    requestAnimationFrame(fitNoteBox);
+  };
+  window.clearNote = function(){ noteEl.innerHTML = ""; };
+
+  window.addEventListener('resize', fitNoteBox);
+})();
+
+  function clearNote(){ note.innerHTML=""; }
+
+  const interceptGroup = new THREE.Group(); scene.add(interceptGroup); interceptGroup.visible=false;
+  const traceGroup     = new THREE.Group(); scene.add(traceGroup);     traceGroup.visible=false;
+  const sectionGroup   = new THREE.Group(); scene.add(sectionGroup);   sectionGroup.visible=false;
+  const symmetryGroup  = new THREE.Group(); scene.add(symmetryGroup);  symmetryGroup.visible=false;
+
+  // ghost plane
+  function makePlaneMesh(color, opacity){
+    const mat = new THREE.MeshBasicMaterial({color, side:THREE.DoubleSide, transparent:true, opacity, depthWrite:false});
+    const geo = new THREE.PlaneGeometry(16,16);
+    return new THREE.Mesh(geo, mat);
+  }
+  const tracePlane = makePlaneMesh(0x8090ff, 0.12);
+  scene.add(tracePlane); tracePlane.visible=false;
+
+  // ---------- Camera helpers ----------
+  const CAM_WIDE = AXLEN * 2.8;
+  const Z_OFF    = AXLEN * 0.4;
+  function tweenCamera(toPos, toTarget, ms=800){
+    const fromPos=camera.position.clone(), fromTgt=controls.target.clone(), t0=performance.now();
+    controls.enabled=false;
+    (function step(now){
+      const t=Math.min(1,(now-t0)/ms), s=t*t*(3-2*t);
+      camera.position.lerpVectors(fromPos,toPos,s);
+      controls.target.lerpVectors(fromTgt,toTarget,s);
+      controls.update();
+      if (t<1) requestAnimationFrame(step);
+      else controls.enabled=true;
+    })(t0);
+  }
+  function viewWithDir(dx, dy, ms=600, zMul=1.4){
+    const p = new THREE.Vector3(dx, dy, 0).normalize().multiplyScalar(CAM_WIDE);
+    p.z = Z_OFF * zMul; tweenCamera(p, new THREE.Vector3(0,0,0), ms);
+  }
+  function viewOxyAngleWide(){ viewWithDir( 1.0, -0.9, 600, 1.8); }
+  function viewOxzAngleWide(){ viewWithDir( 2.0,  0.75); }
+  function viewOyzAngleWide(){ viewWithDir( 0.75, 0.75); }
+  function viewOverview(){ tweenCamera(new THREE.Vector3(CAM_WIDE, -CAM_WIDE, Z_OFF), new THREE.Vector3(0,0,0), 700); }
+
+  // ---------- Helpers for curves ----------
+  function setPlane(mesh, normal, d){
+    const up = new THREE.Vector3(0,0,1);
+    const n  = normal.clone().normalize();
+    mesh.quaternion.setFromUnitVectors(up, n);
+    mesh.position.copy(n.multiplyScalar(d));
+  }
+
+  function makeLine(points, color=0xFF4040){
+    const g=new THREE.BufferGeometry().setFromPoints(points);
+    return new THREE.Line(g, new THREE.LineBasicMaterial({color}));
+  }
+
+  function makeEllipseXYAtZ(k, a, b, seg=256, color=0xFF4040){
+    const rX = Math.abs(a*k), rY = Math.abs(b*k);   // x = a k cosθ, y = b k sinθ
+    if (rX<1e-9 && rY<1e-9) return new THREE.Group(); // z≈0 → degenerate
+    const pts=[];
+    for(let i=0;i<=seg;i++){
+      const th = 2*Math.PI*i/seg;
+      const x = X0 + rX*Math.cos(th);
+      const y = Y0 + rY*Math.sin(th);
+      pts.push(new THREE.Vector3(x,y,Z0+k));
+    }
+    return makeLine(pts, color);
+  }
+
+  // Lines in xz-plane (y=0): z = ± x/a ; clip to |z|≤T_MAX
+  function makeTraceXZ_Lines(a, zMax=T_MAX, color=0xFF4040, seg=180){
+    const group = new THREE.Group();
+    const zs=[-zMax,zMax];
+    const sgn=[+1,-1];
+    sgn.forEach(s=>{
+      const pts=[];
+      for(let i=0;i<=seg;i++){
+        const z = zs[0] + (zs[1]-zs[0])*i/seg;
+        const x = s * a * z;
+        pts.push(new THREE.Vector3(X0 + x, Y0 + 0, Z0 + z));
+      }
+      group.add(makeLine(pts, color));
+    });
+    return group;
+  }
+
+  // Lines in yz-plane (x=0): z = ± y/b
+  function makeTraceYZ_Lines(b, zMax=T_MAX, color=0xFF4040, seg=180){
+    const group = new THREE.Group();
+    const zs=[-zMax,zMax];
+    const sgn=[+1,-1];
+    sgn.forEach(s=>{
+      const pts=[];
+      for(let i=0;i<=seg;i++){
+        const z = zs[0] + (zs[1]-zs[0])*i/seg;
+        const y = s * b * z;
+        pts.push(new THREE.Vector3(X0 + 0, Y0 + y, Z0 + z));
+      }
+      group.add(makeLine(pts, color));
+    });
+    return group;
+  }
+
+  // Sections //xz: y=k → đúng hình học là hai cong; nếu k=0 sẽ là hai đường thẳng.
+  // Ta vẽ chính xác (cong) và CLIP trong phạm vi nón |z|≤T_MAX.
+  // Sections //xz : y = k
+function makeSectionY(k, a,b, zMax=T_MAX, seg=260, color=0xFF4040){
+  const group=new THREE.Group();
+  const zMin = Math.abs(k)/b;                // tồn tại khi |z| >= |k|/b
+  if (zMin > zMax) return group;
+
+  const drawHalf = (z0, z1, signX)=>{
+    const pts=[];
+    for(let i=0;i<=seg;i++){
+      const z = z0 + (z1 - z0)*i/seg;
+      const under = z*z - (k*k)/(b*b);
+      if (under < 0) continue;
+      const x = signX * a * Math.sqrt(under);
+      pts.push(new THREE.Vector3(X0 + x, Y0 + k, Z0 + z));
+    }
+    if (pts.length>1) group.add(new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({color})
+    ));
+  };
+
+  // 4 nhánh, tách riêng 2 miền z<=-zMin và z>=zMin để không nối qua vùng cấm
+  drawHalf(-zMax, -zMin, +1);
+  drawHalf(-zMax, -zMin, -1);
+  drawHalf( zMin,  zMax, +1);
+  drawHalf( zMin,  zMax, -1);
+  return group;
+}
+
+// Sections //yz : x = k
+function makeSectionX(k, a,b, zMax=T_MAX, seg=260, color=0xFF4040){
+  const group=new THREE.Group();
+  const zMin = Math.abs(k)/a;                // tồn tại khi |z| >= |k|/a
+  if (zMin > zMax) return group;
+
+  const drawHalf = (z0, z1, signY)=>{
+    const pts=[];
+    for(let i=0;i<=seg;i++){
+      const z = z0 + (z1 - z0)*i/seg;
+      const under = z*z - (k*k)/(a*a);
+      if (under < 0) continue;
+      const y = signY * b * Math.sqrt(under);
+      pts.push(new THREE.Vector3(X0 + k, Y0 + y, Z0 + z));
+    }
+    if (pts.length>1) group.add(new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({color})
+    ));
+  };
+
+  drawHalf(-zMax, -zMin, +1);
+  drawHalf(-zMax, -zMin, -1);
+  drawHalf( zMin,  zMax, +1);
+  drawHalf( zMin,  zMax, -1);
+  return group;
+}
+
+
+  // ---------- Buttons ----------
+  const btnEq = document.getElementById('btnEquation');
+  const btnI = document.getElementById('btnIntercepts');
+  const btnT = document.getElementById('btnTraces');
+  const btnS = document.getElementById('btnSections');
+  const btnC = document.getElementById('btnCentre');
+  const btnY = document.getElementById('btnSymmetry');
+  const btnResetAll = document.getElementById('btnResetAll');
+  const btnPause = document.getElementById('btnPause');
+
+  btnEq.onclick = showEquation;
+  btnI.onclick = showIntercepts;
+  btnT.onclick = showTraces;
+  btnS.onclick = showSections;
+  btnC.onclick = showCentre;
+  btnY.onclick = showSymmetry;
+  btnResetAll.onclick = ()=>{ hideAllOverlays(); isPaused=false; btnPause.textContent='pause'; };
+
+  let isPaused=false, traceStage=0, traceTimer=null, sectionPhase=0, sectionAnim=null, kVal=0;
+
+  btnPause.onclick = ()=>{
+    isPaused = !isPaused;
+    btnPause.textContent = isPaused ? 'resume' : 'pause';
+    if (isPaused){ if (traceTimer){ clearTimeout(traceTimer); traceTimer=null; } }
+    else { resumeTraces(); }
+  };
+
+  function hideAllOverlays(){
+    clearNote();
+    if (traceTimer){ clearTimeout(traceTimer); traceTimer=null; }
+    if (sectionAnim){ cancelAnimationFrame(sectionAnim); sectionAnim=null; }
+
+    interceptGroup.clear(); interceptGroup.visible=false;
+    traceGroup.clear();     traceGroup.visible=false;
+    sectionGroup.clear();   sectionGroup.visible=false;
+    symmetryGroup.clear();  symmetryGroup.visible=false;
+
+    eqObj.visible = false;
+    tracePlane.visible = false;
+
+    gridOxy.visible=true; gridOxz.visible=false; gridOyz.visible=false;
+
+    [btnEq,btnI,btnT,btnS,btnC,btnY].forEach(b=>b && b.classList.remove('active'));
+  }
+
+  // ---------- Equation ----------
+  function showEquation(){
+    hideAllOverlays();
+    this.classList.add('active');
+    eqObj.visible = true;
+    const tex = `\\textbf{Equation:}\\; \\dfrac{x^{2}}{a^{2}}+\\dfrac{y^{2}}{b^{2}}=z^{2}.`;
+    setNote(tex);
+    viewOverview();
+  }
+
+  // ---------- Intercepts ----------
+  function showIntercepts(){
+    hideAllOverlays();
+    this.classList.add('active');
+    interceptGroup.visible=true; interceptGroup.clear();
+
+    const p = new THREE.Vector3(X0,Y0,Z0);
+    const sph = new THREE.SphereGeometry(0.10, 24, 16);
+    const mat = new THREE.MeshBasicMaterial({color:0xff5252});
+    const m=new THREE.Mesh(sph,mat); m.position.copy(p);
+    interceptGroup.add(m);
+    interceptGroup.add( makeLatexLabel(`(\\;0\\;,\\;0\\;,\\;0\\;)`, new THREE.Vector3(X0+0.18,Y0+0.12,Z0+0.12)) );
+    setNote("\\textbf{Intercept:}\\; \\text{only the origin } (0,0,0).");
+    viewOverview();
+  }
+
+  // ---------- Traces ----------
+  function showTraces(){
+    hideAllOverlays();
+    this.classList.add('active');
+
+    traceGroup.visible=true; traceGroup.clear();
+    tracePlane.visible = true;
+
+    // y=0 (xz-plane)
+    setPlane(tracePlane, new THREE.Vector3(0,1,0), Y0);
+    traceGroup.add( makeTraceXZ_Lines(a, T_MAX) );
+    setNote("\\textbf{Traces:}\\; y=0:\\; z=\\pm x/a;\\; x=0:\\; z=\\pm y/b;\\; z=0:\\; (0,0).");
+    viewOxzAngleWide();
+
+    traceStage=1; scheduleNextTraceStage();
+  }
+  function scheduleNextTraceStage(){
+    if (traceTimer){ clearTimeout(traceTimer); traceTimer=null; }
+    if (isPaused) return;
+    traceTimer = setTimeout(()=>{
+      if (traceStage===1){
+        traceGroup.clear();
+        // x=0 (yz-plane)
+        setPlane(tracePlane, new THREE.Vector3(1,0,0), X0);
+        traceGroup.add( makeTraceYZ_Lines(b, T_MAX) );
+        viewOyzAngleWide();
+        traceStage=2;
+        traceTimer = setTimeout(()=>{
+          // z=0 (xy-plane): chỉ là gốc
+          traceGroup.clear();
+          setPlane(tracePlane, new THREE.Vector3(0,0,1), Z0);
+          const p = new THREE.Vector3(X0,Y0,Z0);
+          const sph = new THREE.SphereGeometry(0.08, 24, 16);
+          const mat = new THREE.MeshBasicMaterial({color:0xff5252});
+          const m=new THREE.Mesh(sph,mat); m.position.copy(p);
+          traceGroup.add(m);
+          viewOxyAngleWide();
+          traceStage=3;
+        }, 2600);
+      }
+    }, 2600);
+  }
+  function resumeTraces(){
+    if (document.getElementById('btnTraces').classList.contains('active') && traceStage<3){
+      scheduleNextTraceStage();
+    }
+  }
+
+  // ---------- Sections (animated) ----------
+  function showSections(){
+    hideAllOverlays();
+    this.classList.add('active');
+    sectionGroup.visible=true; sectionGroup.clear();
+
+    gridOxy.visible=false; gridOxz.visible=false; gridOyz.visible=false;
+
+    const sweepPlane = makePlaneMesh(0x8090ff, 0.12);
+    sectionGroup.add(sweepPlane);
+
+    let curveObj = new THREE.Group();
+    sectionGroup.add(curveObj);
+
+    // Phase 1: z = k (// Oxy): ellipse (circle if a=b)
+    sectionPhase=1; kVal = -T_MAX;
+    setNote(String.raw`\textbf{Sections // Oxy:}\; z=k\Rightarrow \text{ellipse }
+\dfrac{x^{2}}{(ak)^{2}}+\dfrac{y^{2}}{(bk)^{2}}=1\; (k\neq 0).`);
+
+    const qZ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,1));
+    sweepPlane.quaternion.copy(qZ); viewOverview();
+
+    function updateCurve(){
+      curveObj.clear();
+      if (sectionPhase===1){
+        sweepPlane.position.set(0,0,kVal);
+        if (Math.abs(kVal)>1e-6){
+          curveObj.add( makeEllipseXYAtZ(kVal, a,b) );
+        } else {
+          // k≈0: degenerates to origin
+          const p = new THREE.Vector3(X0,Y0,Z0);
+          const sph = new THREE.SphereGeometry(0.08, 24, 16);
+          const mat = new THREE.MeshBasicMaterial({color:0xff5252});
+          const m=new THREE.Mesh(sph,mat); m.position.copy(p); curveObj.add(m);
+        }
+      } else if (sectionPhase===2){
+        // y = k (// Oxz): k=0 → 2 đường thẳng; k≠0 → hai nhánh cong (đúng hình học), đã clip
+        sweepPlane.position.set(0,kVal,0);
+        curveObj.add( makeSectionY(kVal, a,b) );
+      } else if (sectionPhase===3){
+        // x = k (// Oyz)
+        sweepPlane.position.set(kVal,0,0);
+        curveObj.add( makeSectionX(kVal, a,b) );
+      }
+    }
+
+    const speed1=0.035, speed2=0.030, speed3=0.030;
+    const lim1 = +T_MAX, lim2p = +1.3, lim2m = -1.3, lim3p = +1.3, lim3m = -1.3;
+
+    const loop = ()=>{
+      if (!sectionGroup.visible) return;
+      if (!isPaused){
+        if (sectionPhase===1){
+          kVal += speed1;
+          updateCurve();
+          if (kVal > lim1){
+            sectionPhase=2; kVal = lim2m;
+            setNote("\\textbf{Sections // Oxz:}\\; y=k\\Rightarrow \\text{2 lines if } k=0; \\text{ else 2 curves}.");
+            const qY = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(0,1,0));
+            sweepPlane.quaternion.copy(qY); viewOverview(); updateCurve();
+          }
+        } else if (sectionPhase===2){
+          kVal += speed2;
+          updateCurve();
+          if (kVal > lim2p){
+            sectionPhase=3; kVal = lim3m;
+            setNote("\\textbf{Sections // Oyz:}\\; x=k\\Rightarrow \\text{2 lines if } k=0; \\text{ else 2 curves}.");
+            const qX = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(1,0,0));
+            sweepPlane.quaternion.copy(qX); viewOverview(); updateCurve();
+          }
+        } else if (sectionPhase===3){
+          kVal += speed3;
+          updateCurve();
+          if (kVal > lim3p){
+            sectionGroup.visible=false; clearNote();
+            cancelAnimationFrame(sectionAnim); sectionAnim=null; return;
+          }
+        }
+      }
+      sectionAnim = requestAnimationFrame(loop);
+    };
+    if (sectionAnim) cancelAnimationFrame(sectionAnim);
+    sectionAnim = requestAnimationFrame(loop);
+  }
+
+  // ---------- Centre ----------
+  function showCentre(){
+    hideAllOverlays();
+    this.classList.add('active');
+    const g = new THREE.SphereGeometry(0.12, 24, 16);
+    const m = new THREE.MeshBasicMaterial({color:0xff5252});
+    const s = new THREE.Mesh(g,m); s.position.set(X0,Y0,Z0);
+    const lbl = makeLatexLabel(`(\\;${X0}\\;,\\;${Y0}\\;,\\;${Z0}\\;)`, new THREE.Vector3(X0+0.18,Y0+0.12,Z0+0.12));
+    interceptGroup.clear(); interceptGroup.add(s); interceptGroup.add(lbl); interceptGroup.visible=true;
+    setNote("\\textbf{Centre:}\\; (0,\\,0,\\,0).");
+    viewOverview();
+  }
+
+  // ---------- Symmetry ----------
+  function showSymmetry(){
+    hideAllOverlays();
+    this.classList.add('active');
+    symmetryGroup.visible=true; symmetryGroup.clear();
+
+    function plane(normal, d, color, opacity){
+      const size=16;
+      const geo=new THREE.PlaneGeometry(size,size);
+      const mat=new THREE.MeshBasicMaterial({color, side:THREE.DoubleSide, transparent:true, opacity});
+      const mesh=new THREE.Mesh(geo,mat);
+      const up=new THREE.Vector3(0,0,1), n=normal.clone().normalize();
+      const q=new THREE.Quaternion().setFromUnitVectors(up,n);
+      mesh.quaternion.copy(q);
+      mesh.position.copy(n.clone().multiplyScalar(d));
+      return mesh;
+    }
+    symmetryGroup.add( plane(new THREE.Vector3(0,0,1), Z0, 0x4a5160, 0.20) );
+    symmetryGroup.add( plane(new THREE.Vector3(0,1,0), Y0, 0x4a5160, 0.20) );
+    symmetryGroup.add( plane(new THREE.Vector3(1,0,0), X0, 0x4a5160, 0.20) );
+
+    setNote("\\textbf{Symmetry:}\\; \\text{Symmetric about the coordinate planes.}");
+    viewOverview();
+  }
+
+  // ---------- Render loop ----------
+  function animate(){
+    controls.update();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+
+  // ---------- Traces resume helper ----------
+  function resumeTraces(){
+    if (document.getElementById('btnTraces').classList.contains('active') && traceStage<3){
+      scheduleNextTraceStage();
+    }
+  }
+  </script>
+</body>
+</html>

@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Hyperbolic Paraboloid — one moving line generates the surface</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="./lib/katex.min.css">
+<style>
+  html,body{margin:0;height:100%;background:#0a0e14;color:#eaeef2;font-family:system-ui;overflow:hidden}
+  #hud{position:fixed;top:10px;left:10px;z-index:10;background:#1118;border:1px solid #334;padding:10px 12px;border-radius:8px}
+  #hud button,#hud input{margin:3px 0}
+  #hint{position:fixed;right:10px;bottom:10px;z-index:10;background:#1118;border:1px solid #334;border-radius:8px;padding:6px 8px;font-size:12px;color:#c8cede}
+  .axis-label{font-family:"KaTeX_Main","Latin Modern Math","STIX Two Text",serif;font-size:18px;color:#e8ecff;text-shadow:0 0 4px rgba(20,30,60,.6);user-select:none;pointer-events:none}
+  .eq-white{color:#ffffff;text-shadow:0 0 6px rgba(0,0,0,.35)}
+  .eq-red{color:#ff5252;text-shadow:0 0 6px rgba(60,10,10,.45)}
+  #c{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div style="font-weight:700;margin-bottom:6px">Hyperbolic Paraboloid</div>
+  <label>Duration (s): <input id="dur" type="number" value="10" min="3" max="60" style="width:64px"></label>
+  <label>a: <input id="a" type="number" value="1.6" step="0.1" style="width:64px"></label>
+  <label>b: <input id="b" type="number" value="1.0" step="0.1" style="width:64px"></label>
+  <label>L: <input id="L" type="number" value="1.2" step="0.1" style="width:64px" title="u ∈ [-L, L], v ∈ [-L, L]"></label>
+  <label>vSeg: <input id="vseg" type="number" value="120" min="40" max="400" step="10" style="width:64px"></label>
+  <div><button id="play">Play/Pause</button> <button id="reset">Reset</button></div>
+</div>
+
+<div id="hint">Kéo để xoay • Lăn/pinch để zoom • Shift+Kéo để pan</div>
+<canvas id="c"></canvas>
+
+<script src="./lib/three.min.js"></script>
+<script src="./lib/OrbitControls.js"></script>
+<script src="./lib/CSS2DRenderer.js"></script>
+<script src="./lib/katex.min.js"></script>
+
+<script>
+// === Renderer & label renderer ===
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+
+const labelRenderer = new THREE.CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, {position:'fixed', top:'0', left:'0', pointerEvents:'none', zIndex:'5'});
+document.body.appendChild(labelRenderer.domElement);
+
+// === Scene / Camera / Controls ===
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0e14);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 160);
+camera.position.set(8,-8,5.6);
+camera.up.set(0,0,1);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0,0,0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.zoomSpeed = 0.25;
+controls.minDistance = 3.0;
+controls.maxDistance = 80.0;
+controls.update();
+
+// Resize
+addEventListener('resize', ()=>{
+  renderer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+});
+
+// Lights
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.8));
+const dir = new THREE.DirectionalLight(0xffffff, 0.7); dir.position.set(6,6,8); scene.add(dir);
+
+// Axes + grid
+const AXLEN = 8;
+const matX = new THREE.LineBasicMaterial({color:0xff6b6b, transparent:true, opacity:0.7});
+const matY = new THREE.LineBasicMaterial({color:0x7be77b, transparent:true, opacity:0.7});
+const matZ = new THREE.LineBasicMaterial({color:0x6fa8ff, transparent:true, opacity:0.9});
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-AXLEN,0,0), new THREE.Vector3(AXLEN,0,0)]), matX));
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-AXLEN,0), new THREE.Vector3(0,AXLEN,0)]), matY));
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-AXLEN), new THREE.Vector3(0,0,AXLEN)]), matZ));
+const tipZ = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.28, 18), new THREE.MeshBasicMaterial({color:0x6fa8ff, transparent:true, opacity:0.9}));
+tipZ.position.set(0,0,AXLEN); tipZ.rotation.x = Math.PI/2; scene.add(tipZ);
+
+function makeGrid(size, divisions, c1, c2, opacity){
+  const g = new THREE.GridHelper(size, divisions, c1, c2);
+  if (Array.isArray(g.material)) g.material.forEach(m=>{ m.transparent = true; m.opacity = opacity; });
+  else { g.material.transparent = true; g.material.opacity = opacity; }
+  return g;
+}
+const gridOxy = makeGrid(26, 26, 0xb6bbcc, 0x84878c, 0.22); gridOxy.rotation.x = Math.PI/2; scene.add(gridOxy);
+const gridOxz = makeGrid(26, 26, 0xb6bbcc, 0x84878c, 0.18); scene.add(gridOxz);
+
+// ------- KaTeX labels -------
+function makeLatexLabel(tex, pos, className='axis-label'){
+  const el = document.createElement('div'); el.className = className;
+  window.katex.render(tex, el, {throwOnError:false});
+  const obj = new THREE.CSS2DObject(el); obj.position.copy(pos); return obj;
+}
+const OFFSET = 0.25;
+scene.add(
+  makeLatexLabel("\\mathit{x}", new THREE.Vector3(AXLEN+OFFSET,0,0)),
+  makeLatexLabel("\\mathit{y}", new THREE.Vector3(0,AXLEN+OFFSET,0)),
+  makeLatexLabel("\\mathit{z}", new THREE.Vector3(0,0,AXLEN+OFFSET)),
+);
+
+// ------- UI Params -------
+const durInput = document.getElementById('dur');
+const aInput   = document.getElementById('a');
+const bInput   = document.getElementById('b');
+const LInput   = document.getElementById('L');
+const vSegInput= document.getElementById('vseg');
+
+let A = Math.max(0.05, parseFloat(aInput.value));
+let B = Math.max(0.05, parseFloat(bInput.value));
+let L = Math.max(0.2,  parseFloat(LInput.value));   // u,v ∈ [-L, L]
+let vSeg = Math.max(40, parseInt(vSegInput.value));
+let durationSec = parseFloat(durInput.value);
+
+// ------- Live moving line (current ruling) -------
+let movingLine = null;
+function makeRulingPoints(u0){
+  const pts=[];
+  for(let i=0;i<=vSeg;i++){
+    const v = -L + (2*L)*i/vSeg;
+    pts.push( new THREE.Vector3( A*(u0+v), B*(u0-v), 4*u0*v ) );
+  }
+  return pts;
+}
+function buildMovingLine(u0){
+  const pts = makeRulingPoints(u0);
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({
+  color: 0xff5252,         // ← đỏ
+  transparent: true,
+  opacity: 0.95
+});
+
+  if (movingLine){
+    movingLine.geometry.dispose();
+    movingLine.geometry = geo;
+  } else {
+    movingLine = new THREE.Line(geo, mat);
+    scene.add(movingLine);
+  }
+}
+
+// ------- Growing surface: we “loft” strips between successive line positions -------
+let surfGeo=null, surfMesh=null;
+function resetSurface(){
+  tris = [];                         // <— mảng toạ độ tam giác (non-indexed)
+  if (surfMesh){ surfMesh.geometry.dispose(); scene.remove(surfMesh); surfMesh=null; }
+  surfGeo = new THREE.BufferGeometry();
+
+  // unlit để luôn sáng màu xanh lá
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xbfd7ff, roughness:0.35, metalness:0.0,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.95
+  });
+
+  surfMesh = new THREE.Mesh(surfGeo, mat);
+  scene.add(surfMesh);
+}
+let tris = []; // [x,y,z, x,y,z, x,y,z, ...]  (từng tam giác nối tiếp)
+
+function appendStrip(prevPts, curPts){
+  const n = prevPts.length;
+  for (let i=0;i<n-1;i++){
+    const a = prevPts[i],   c = prevPts[i+1];
+    const b = curPts[i],    d = curPts[i+1];
+
+    // hai tam giác cho mỗi quad: (a,b,c) và (b,d,c)
+    tris.push(
+      a.x,a.y,a.z,  b.x,b.y,b.z,  c.x,c.y,c.z,
+      b.x,b.y,b.z,  d.x,d.y,d.z,  c.x,c.y,c.z
+    );
+  }
+
+  const posArr = new Float32Array(tris);
+  surfGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  surfGeo.computeVertexNormals();
+}
+
+
+// ------- Equation label (only after sweep completes) -------
+let eqSurf = null;
+function createEquationLabel(){
+  if (eqSurf && eqSurf.parent) eqSurf.parent.remove(eqSurf);
+  const aStr = A.toFixed(2), bStr = B.toFixed(2);
+  eqSurf = makeLatexLabel(`\\;\\dfrac{x^{2}}{${aStr}^{2}}-\\dfrac{y^{2}}{${bStr}^{2}}=z\\;`,
+                          new THREE.Vector3(0,0,0.9*AXLEN), 'axis-label eq-white');
+  eqSurf.visible = false;
+  scene.add(eqSurf);
+}
+createEquationLabel();
+
+// ------- Animation state -------
+let tPrev=0, playing=false, prog=0; // prog in [0,1] → u from -L to +L
+let prevPts = null;
+
+function tick(ts){
+  if(!tPrev) tPrev=ts;
+  const dt=(ts-tPrev)/1000; tPrev=ts;
+
+  if (playing){
+    const inc = dt / durationSec;
+    const oldProg = prog;
+    prog = Math.min(1, prog + inc);
+    const u0 = -L + (2*L)*prog;
+
+    // update moving line
+    buildMovingLine(u0);
+
+    // append surface strip from previous line to current one
+    const curPts = makeRulingPoints(u0);
+    if (prevPts){
+      appendStrip(prevPts, curPts);
+    }
+    prevPts = curPts;
+
+    if (prog>=1){
+      playing = false;
+      if (eqSurf) eqSurf.visible = true; // show equation when done
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// ------- Init -------
+resetSurface();
+buildMovingLine(-L);
+
+// ------- UI -------
+document.getElementById('play').onclick=()=>{ if(prog<1) playing=!playing; };
+document.getElementById('reset').onclick=()=>{
+  A = Math.max(0.05, parseFloat(aInput.value));
+  B = Math.max(0.05, parseFloat(bInput.value));
+  L = Math.max(0.2,  parseFloat(LInput.value));
+  vSeg = Math.max(40, parseInt(vSegInput.value));
+  durationSec = parseFloat(durInput.value);
+
+  // reset everything
+  prog = 0; playing = false;
+  prevPts = null;
+  if (movingLine){ movingLine.geometry.dispose(); scene.remove(movingLine); movingLine = null; }
+  resetSurface();
+  buildMovingLine(-L);
+  createEquationLabel();
+  if (eqSurf) eqSurf.visible = false;
+};
+</script>
+</body>
+</html>
